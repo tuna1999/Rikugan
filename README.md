@@ -1,6 +1,25 @@
-# IRIS — Intelligent Reverse-engineering Integrated System
+# Iris — The IDA Pro companion
 
-An IDA Pro plugin that integrates a multi-provider LLM agent as a first-class reverse engineering companion. IRIS provides an agentic loop with streaming, 57 purpose-built IDA tools, 7 built-in analysis skills, MCP server integration, and a native Qt chat panel — all accessible through a single hotkey.
+An IDA Pro plugin that integrates a multi-provider LLM agent as a first-class reverse engineering companion. Iris provides an agentic loop with streaming, 57 purpose-built IDA tools, 7 built-in analysis skills, MCP client, and a native Qt chat panel, all accessible through a single hotkey.
+
+
+## Is this another MCP client?
+
+No, Iris is an agent built to live inside IDA Pro. It does not consume an MCP server to interact with IDA — it has its own agentic loop, context management, and tool orchestration layer running entirely in-process. The agent loop is a generator-based turn cycle: each user message kicks off a stream→execute→repeat pipeline where the LLM response is streamed token-by-token, tool calls are intercepted and dispatched to 57 IDA-native handlers (marshalled to the main thread via `execute_sync`), and the results are fed back as the next turn's context. The loop runs in a background thread while a Qt timer polls events into the UI, so IDA never blocks. It supports automatic error recovery, mid-run user questions (`ask_user`), plan mode for multi-step workflows, and message queuing — all without leaving IDA.
+
+It has a set of tools exposed to the agent that encapsulate many IDA interactions. The agent was really born ***living*** and ***breathing*** reversing.
+
+Advantages:
+
+- No need to switch to an external MCP client such as Claude Code
+- Assistant first, not made to do your job (unless you ask it)
+- Expandable to many LLM providers and local installations (Ollama)
+- Quick enabling, just hit Ctrl+Shift+I and the chat will appear
+
+![Iris chat panel](assets/chat.png)
+
+Also, building agents is an amazing area of study, especially coding with them.
+
 
 ## Features
 
@@ -10,78 +29,46 @@ An IDA Pro plugin that integrates a multi-provider LLM agent as a first-class re
 - **9 context menu actions** — right-click in disasm/pseudocode for instant analysis
 - **5 LLM providers** — Anthropic (Claude), OpenAI, Gemini, Ollama, OpenAI-compatible
 - **Message queuing** — send follow-up messages while the agent is working; they auto-submit when the current turn finishes
-- **Unlimited tool rounds** — the agent runs until the task is done, not until an arbitrary counter expires
 - **Microcode tools** — read, NOP, and install custom optimizers at any Hex-Rays maturity level
 - **Session persistence** — auto-save/restore conversations across IDA restarts
 
 ## Requirements
 
 - IDA Pro 9.0+ with Hex-Rays decompiler (recommended)
-- Python 3.9+
-- At least one LLM provider SDK installed
+- Python 3.9+ (3.14 is known to have problems with Qt)
+- At least one LLM provider
+
 
 ## Installation
 
-### 1. Clone or symlink into your IDA plugins directory
+Clone this repository, then on Linux or macOS run:
 
 ```bash
-# Symlink (recommended for development)
-ln -s /path/to/IDAPlugins/iris_plugin.py ~/.idapro/plugins/iris_plugin.py
-ln -s /path/to/IDAPlugins/iris ~/.idapro/plugins/iris
-
-# Or copy directly
-cp iris_plugin.py ~/.idapro/plugins/
-cp -r iris ~/.idapro/plugins/
+./install.sh
 ```
 
-### 2. Install a provider SDK
+This will automatically place the plugin in the `~/.idapro/plugins` folder and create its files at `~/.iris/`.
 
-```bash
-# Anthropic (Claude) — recommended
-pip install anthropic
+### Set your API key
 
-# OpenAI
-pip install openai
+Iris has a settings dialog to configure your model of choice; it comes with predefined values. Open Iris → click Settings → paste your key. Keys are persisted to `~/.idapro/iris/config.json`.
 
-# Google Gemini
-pip install google-generativeai
+![Settings dialog](assets/settings.png)
 
-# Ollama (local models) — uses the openai package
-pip install openai
-```
+**Anthropic OAuth:** If you have Claude Code installed and authenticated, Iris auto-detects the OAuth token from the macOS Keychain. Otherwise, you can get the OAuth token by running `claude setup-token` (you'll have to log in again).
 
-Use the `pip` that corresponds to your IDA Python environment.
 
-### 3. Set your API key
-
-**Environment variable:**
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."   # Anthropic
-export OPENAI_API_KEY="sk-..."          # OpenAI
-export GOOGLE_API_KEY="..."             # Gemini
-```
-
-**Anthropic OAuth:** If you have Claude Code installed and authenticated, IRIS auto-detects the OAuth token from the macOS Keychain. No configuration needed.
-
-**Settings dialog:** Open IRIS → click Settings → paste your key. Keys are persisted to `~/.idapro/iris/config.json`.
-
-### 4. Verify
-
-Launch IDA and open any binary. You should see:
-
-```
-[IRIS] INFO: Plugin loaded (v0.1.0)
-```
 
 ## Usage
 
 ### Open the panel
 
-Press **Ctrl+Shift+I** or go to **Edit → Plugins → IRIS**.
+Press **Ctrl+Shift+I** or go to **Edit → Plugins → Iris**.
 
-### Chat
+![Panel overview](assets/panel.png)
 
-Type a message and press **Enter** to send. IRIS streams the response and executes IDA tools as needed.
+
+Type a message and press **Enter** to send. Iris streams the response and executes IDA tools as needed.
 
 - **Enter** — send message
 - **Shift+Enter** — newline
@@ -140,7 +127,7 @@ Task: <instruction for the agent>
 
 ### MCP Servers
 
-Connect external MCP servers to extend IRIS with additional tools. Configure in `~/.iris/mcp.json`:
+Connect external MCP servers to extend Iris with additional tools. Configure in `~/.iris/mcp.json`:
 
 ```json
 {
@@ -156,37 +143,6 @@ Connect external MCP servers to extend IRIS with additional tools. Configure in 
 ```
 
 MCP tools appear alongside built-in tools with the prefix `mcp_<server>_<tool>`. The agent sees them in the tool list and can call them like any other tool.
-
-### Settings
-
-Click **Settings** in the panel to configure:
-
-| Setting | Description |
-|---------|-------------|
-| Provider | `anthropic`, `openai`, `gemini`, `ollama`, `openai_compat` |
-| Model | Model ID (e.g. `claude-sonnet-4-20250514`, `gpt-4o`) |
-| API Key | Provider API key (or use env vars / OAuth) |
-| API Base | Custom endpoint URL for `openai_compat` / `ollama` |
-| Temperature | 0.0–2.0 (default 0.2) |
-| Max Output Tokens | Per-response token limit (default 16384) |
-| Context Window | Model context window size |
-| Auto-context | Inject binary info and cursor position into system prompt |
-| Auto-save | Persist sessions across restarts |
-
-### Using Ollama (local models)
-
-1. Install and start [Ollama](https://ollama.com)
-2. Pull a model: `ollama pull llama3.1`
-3. In IRIS settings: provider → `ollama`, model → `llama3.1`
-4. No API key required — connects to `http://localhost:11434`
-
-### Using OpenAI-compatible endpoints
-
-For Together, Groq, vLLM, or any OpenAI-compatible API:
-
-1. Provider → `openai_compat`
-2. API Base → endpoint URL
-3. Set model name and API key as needed
 
 ## Tools
 
@@ -207,114 +163,3 @@ For Together, Groq, vLLM, or any OpenAI-compatible API:
 | **Scripting** | `execute_python` (last resort — the agent prefers built-in tools) |
 
 Decompiler and microcode tools require Hex-Rays. If unavailable, they return an error and all other tools continue to work.
-
-## Project Structure
-
-```
-iris_plugin.py                  # Plugin entry point (PLUGIN_ENTRY)
-iris/
-  constants.py
-  core/
-    types.py                    # Message, ToolCall, ToolResult, TokenUsage
-    errors.py                   # IRISError hierarchy
-    thread_safety.py            # @idasync decorator
-    config.py                   # JSON-persisted configuration
-    logging.py                  # IDA output window logger
-  providers/
-    base.py                     # LLMProvider ABC
-    anthropic_provider.py       # Claude adapter (with OAuth auto-detect)
-    openai_provider.py          # GPT adapter
-    openai_compat.py            # Generic OpenAI-compatible adapter
-    gemini_provider.py          # Gemini adapter
-    ollama_provider.py          # Ollama adapter
-    registry.py                 # Provider factory
-  tools/
-    base.py                     # @tool decorator, JSON schema generation
-    registry.py                 # Tool registry and dispatch
-    navigation.py               # Cursor, jump, name lookup
-    functions.py                # Function listing and search
-    strings.py                  # String listing and search
-    database.py                 # Segments, imports, exports, binary info
-    disassembly.py              # Disassembly reading
-    decompiler.py               # Hex-Rays pseudocode
-    xrefs.py                    # Cross-references
-    annotations.py              # Rename, comment, set type
-    types_tools.py              # Struct/enum/typedef engineering
-    microcode.py                # Hex-Rays microcode read/NOP/optimizer
-    scripting.py                # Python execution (last resort)
-  skills/
-    loader.py                   # SKILL.md parser (frontmatter + body)
-    registry.py                 # Skill discovery and resolution
-    builtins/                   # 7 built-in skills
-      malware-analysis/
-      linux-malware/
-      deobfuscation/
-      driver-analysis/
-      vuln-audit/
-      ctf/
-      generic-re/
-  mcp/
-    config.py                   # ~/.iris/mcp.json parser
-    protocol.py                 # JSON-RPC 2.0 encoding/decoding
-    client.py                   # MCP server subprocess manager
-    bridge.py                   # MCP tool → IRIS tool adapter
-    manager.py                  # Multi-server orchestrator
-  agent/
-    loop.py                     # Generator-based agentic turn cycle
-    turn.py                     # TurnEvent types
-    plan_mode.py                # Plan generation and step execution
-    checkpoint.py               # Session checkpoint save/restore
-    context_window.py           # Token tracking and compaction
-    system_prompt.py            # Binary-aware system prompt builder
-  state/
-    session.py                  # Session state
-    conversation.py             # Message serialization
-    history.py                  # Session persistence
-  ui/
-    qt_compat.py                # PySide6/PyQt5 detection
-    styles.py                   # Dark theme stylesheet
-    panel.py                    # Main dockable panel
-    chat_view.py                # Scrollable message area
-    input_area.py               # Multi-line input with /skill autocomplete
-    context_bar.py              # Address/function/model/token display
-    message_widgets.py          # User/assistant/tool call widgets
-    plan_view.py                # Plan step display with approve/reject
-    settings_dialog.py          # Configuration dialog
-    actions.py                  # Context menu integration (9 actions)
-tests/
-  mocks/ida_mock.py             # Mock IDA API for testing
-  test_tools.py
-  test_providers.py
-  test_agent.py
-  test_skills.py
-  test_mcp.py
-```
-
-## Running Tests
-
-Tests use a mock IDA API layer and run without IDA:
-
-```bash
-cd /path/to/IDAPlugins
-python3 -m unittest discover -s tests -v
-```
-
-## Data Storage
-
-```
-~/.idapro/iris/
-  config.json                   # Settings
-  checkpoints/
-    sessions/                   # Auto-saved session history
-  iris_debug.log                # Debug log
-
-~/.iris/
-  skills/                       # User-defined skills
-    my-skill/
-      SKILL.md
-  mcp.json                      # MCP server configuration
-```
-
-## License
-
-MIT
