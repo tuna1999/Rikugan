@@ -81,6 +81,27 @@ if !errorlevel! equ 0 (
 if not exist "%PLUGINS_DIR%\" mkdir "%PLUGINS_DIR%"
 if not exist "%CONFIG_DIR%\"  mkdir "%CONFIG_DIR%"
 
+:: ── Copy built-in skills ────────────────────────────────────────────
+
+set "SKILLS_DIR=%CONFIG_DIR%\skills"
+set "BUILTINS_SRC=%SCRIPT_DIR%\iris\skills\builtins"
+
+if exist "%BUILTINS_SRC%\" (
+    echo [*] Installing built-in skills into %SKILLS_DIR%...
+    if not exist "%SKILLS_DIR%\" mkdir "%SKILLS_DIR%"
+    for /d %%S in ("%BUILTINS_SRC%\*") do (
+        set "SLUG=%%~nxS"
+        if exist "%SKILLS_DIR%\!SLUG!\" (
+            echo [+] /!SLUG! already exists, skipping ^(user copy preserved^)
+        ) else (
+            xcopy "%%S" "%SKILLS_DIR%\!SLUG!\" /E /I /Y /Q >nul
+            echo [+] /!SLUG!
+        )
+    )
+) else (
+    echo [!] Built-in skills not found at %BUILTINS_SRC%, skipping
+)
+
 :: ── Install plugin (copy) ────────────────────────────────────────────
 
 echo [*] Installing Iris into %PLUGINS_DIR%...
@@ -133,6 +154,7 @@ echo [+] Iris installed successfully!
 echo [*] Plugin:  %PLUGINS_DIR%\iris_plugin.py
 echo [*] Package: %PLUGINS_DIR%\iris
 echo [*] Config:  %CONFIG_DIR%\
+echo [*] Skills:  %SKILLS_DIR%\
 echo.
 echo [*] Open IDA and press Ctrl+Shift+I to start Iris.
 echo [*] First run: click Settings to configure your LLM provider and API key.

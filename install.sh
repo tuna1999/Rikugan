@@ -98,6 +98,28 @@ fi
 mkdir -p "$PLUGINS_DIR"
 mkdir -p "$CONFIG_DIR"
 
+# ── Copy built-in skills ──────────────────────────────────────────────
+
+SKILLS_DIR="$CONFIG_DIR/skills"
+BUILTINS_SRC="$SCRIPT_DIR/iris/skills/builtins"
+
+if [[ -d "$BUILTINS_SRC" ]]; then
+    info "Installing built-in skills into $SKILLS_DIR..."
+    mkdir -p "$SKILLS_DIR"
+    for skill in "$BUILTINS_SRC"/*/; do
+        slug="$(basename "$skill")"
+        dst="$SKILLS_DIR/$slug"
+        if [[ -d "$dst" ]]; then
+            ok "/$slug already exists, skipping (user copy preserved)"
+        else
+            cp -R "$skill" "$dst"
+            ok "/$slug"
+        fi
+    done
+else
+    warn "Built-in skills not found at $BUILTINS_SRC, skipping"
+fi
+
 # ── Install plugin via symlinks ───────────────────────────────────────
 
 install_link() {
@@ -132,6 +154,7 @@ ok "Iris installed successfully!"
 info "Plugin:  $PLUGINS_DIR/iris_plugin.py"
 info "Package: $PLUGINS_DIR/iris"
 info "Config:  $CONFIG_DIR/"
+info "Skills:  $SKILLS_DIR/"
 echo ""
 info "Open IDA and press Ctrl+Shift+I to start Iris."
 info "First run: click Settings to configure your LLM provider and API key."
