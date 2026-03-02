@@ -137,7 +137,7 @@ Right-click a tab or click the **Export** button to save a conversation as Markd
 
 The `execute_python` tool always asks for your permission before running. You see the full Python code with syntax highlighting in a scrollable preview, and can **Allow** or **Deny** each execution. The agent can never run the target binary on your machine.
 
-![alt text](assets/approval_example.png.png)
+![alt text](assets/approval_example.png)
 
 ### Message queuing
 
