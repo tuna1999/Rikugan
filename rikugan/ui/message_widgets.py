@@ -7,6 +7,7 @@ import random
 import re as _re
 
 from .qt_compat import (
+    CopyableLabel,
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton, QPushButton,
     QWidget, Qt, Signal, QTimer,
 )
@@ -107,7 +108,7 @@ class UserMessageWidget(QFrame):
         role_label.setStyleSheet("color: #4ec9b0; font-weight: bold; font-size: 11px;")
         layout.addWidget(role_label)
 
-        content = QLabel(text)
+        content = CopyableLabel(text)
         content.setWordWrap(True)
         content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content.setStyleSheet("color: #d4d4d4; font-size: 13px;")
@@ -187,7 +188,7 @@ class _ThinkingBlock(QFrame):
         header.addWidget(self._header_label, 1)
         layout.addLayout(header)
 
-        self._content = QLabel()
+        self._content = CopyableLabel()
         self._content.setWordWrap(True)
         self._content.setTextFormat(Qt.TextFormat.RichText)
         self._content.setTextInteractionFlags(
@@ -237,7 +238,7 @@ class AssistantMessageWidget(QFrame):
         self._thinking_block = _ThinkingBlock()
         layout.addWidget(self._thinking_block)
 
-        self._content = QLabel()
+        self._content = CopyableLabel()
         self._content.setWordWrap(True)
         self._content.setTextFormat(Qt.TextFormat.RichText)
         self._content.setTextInteractionFlags(
@@ -349,7 +350,7 @@ class QueuedMessageWidget(QFrame):
         role_label.setStyleSheet("color: #4ec9b0; font-weight: bold; font-size: 11px;")
         content_layout.addWidget(role_label)
 
-        content = QLabel(text)
+        content = CopyableLabel(text)
         content.setWordWrap(True)
         content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content.setStyleSheet("color: #d4d4d4; font-size: 13px;")
@@ -384,7 +385,7 @@ class UserQuestionWidget(QFrame):
         header.setStyleSheet("color: #dcdcaa; font-weight: bold; font-size: 11px;")
         layout.addWidget(header)
 
-        q_label = QLabel(question)
+        q_label = CopyableLabel(question)
         q_label.setWordWrap(True)
         q_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         q_label.setStyleSheet("color: #d4d4d4; font-size: 13px;")
@@ -521,7 +522,7 @@ class ErrorMessageWidget(QFrame):
         header.setStyleSheet("color: #f44747; font-weight: bold; font-size: 11px;")
         layout.addWidget(header)
 
-        content = QLabel(error_text)
+        content = CopyableLabel(error_text)
         content.setWordWrap(True)
         content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content.setStyleSheet("color: #f44747; font-size: 12px;")

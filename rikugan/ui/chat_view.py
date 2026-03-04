@@ -8,9 +8,7 @@ from typing import Dict, List, Optional
 
 _THINKING_MIN_DISPLAY_MS = 500
 
-from PySide6.QtCore import QEvent
 from .qt_compat import (
-    QApplication, QLabel,
     QScrollArea, QVBoxLayout, QWidget, QSizePolicy, QTimer, Qt, Signal,
 )
 from .message_widgets import (
@@ -80,44 +78,6 @@ class ChatView(QScrollArea):
         self._thinking_hide_timer = QTimer(self)
         self._thinking_hide_timer.setSingleShot(True)
         self._thinking_hide_timer.timeout.connect(self._force_hide_thinking)
-
-        self._install_copy_filters()
-
-    # ------------------------------------------------------------------
-    # Keyboard copy support (Ctrl+C / Cmd+C on selected QLabel text)
-    # ------------------------------------------------------------------
-
-    def _install_copy_filters(self) -> None:
-        """Install event filters on all current and future QLabels.
-
-        Called once during init.  Catches KeyPress for Ctrl+C on any QLabel
-        that is a descendant of this ChatView, including lazily-created ones
-        (tool results, etc.) because the filter is on QApplication.
-        """
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
-
-    def eventFilter(self, obj, event) -> bool:
-        """Intercept Ctrl+C / Cmd+C on QLabels that have selected text."""
-        if (
-            event.type() == QEvent.Type.KeyPress
-            and isinstance(obj, QLabel)
-            and event.matches(Qt.StandardKey.Copy)
-        ):
-            # Only handle labels inside our chat container.
-            if not self._container.isAncestorOf(obj):
-                return False
-            try:
-                sel = obj.selectedText()
-            except RuntimeError:
-                return False
-            if sel:
-                # QLabel.selectedText() returns Unicode paragraph separator
-                # (U+2029) instead of newlines — normalize.
-                QApplication.clipboard().setText(sel.replace("\u2029", "\n"))
-                return True
-        return super().eventFilter(obj, event)
 
     def add_user_message(self, text: str) -> None:
         widget = UserMessageWidget(text)

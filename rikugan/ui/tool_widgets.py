@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 import re as _re
 
 from .qt_compat import (
+    CopyableLabel,
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton,
     QWidget, QSizePolicy, Qt, Signal, QTimer, QPlainTextEdit,
 )
@@ -424,7 +425,7 @@ class ToolCallWidget(QFrame):
         self._detail_layout.setContentsMargins(28, 2, 0, 2)
         self._detail_layout.setSpacing(2)
 
-        self._args_label = QLabel()
+        self._args_label = CopyableLabel()
         self._args_label.setObjectName("tool_content")
         self._args_label.setWordWrap(True)
         self._args_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -435,7 +436,7 @@ class ToolCallWidget(QFrame):
         self._result_header.setVisible(False)
         self._detail_layout.addWidget(self._result_header)
 
-        self._result_label = QLabel()
+        self._result_label = CopyableLabel()
         self._result_label.setObjectName("tool_content")
         self._result_label.setWordWrap(True)
         self._result_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
