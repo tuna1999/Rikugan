@@ -1076,6 +1076,95 @@ class AgentLoop:
         # All retries exhausted
         raise last_error  # type: ignore[misc]
 
+    def _prepare_provider_messages(
+        self, system_prompt: str
+    ) -> Tuple[List, int, Optional[TokenUsage]]:
+        """Estimate tokens, compact context if needed, return (provider_messages, estimated_tokens, estimated_usage)."""
+        # Estimate full in-memory context so compaction decisions work
+        # even when provider streaming usage is missing.
+        full_messages = minify_messages(
+            self.session.get_messages_for_provider(context_window=0)
+        )
+        full_prompt_tokens = self._estimate_prompt_tokens(full_messages, system_prompt)
+        if full_prompt_tokens > 0:
+            self._context_manager.update_usage(
+                TokenUsage(prompt_tokens=full_prompt_tokens, total_tokens=full_prompt_tokens)
+            )
+
+        if self._context_manager.should_compact():
+            log_info(
+                f"Context compaction triggered (usage ratio: "
+                f"{self._context_manager.usage_ratio:.1%})"
+            )
+            self.session.messages = self._context_manager.compact_messages(self.session.messages)
+
+        ctx_window = self.config.provider.context_window
+        provider_messages = minify_messages(
+            self.session.get_messages_for_provider(context_window=ctx_window)
+        )
+        estimated_prompt_tokens = self._estimate_prompt_tokens(provider_messages, system_prompt)
+        estimated_usage: Optional[TokenUsage] = None
+        if estimated_prompt_tokens > 0:
+            estimated_usage = TokenUsage(
+                prompt_tokens=estimated_prompt_tokens,
+                total_tokens=estimated_prompt_tokens,
+            )
+            self._context_manager.update_usage(estimated_usage)
+        return provider_messages, estimated_prompt_tokens, estimated_usage
+
+    def _accumulate_chunk_usage(
+        self, last: Optional[TokenUsage], chunk: TokenUsage
+    ) -> TokenUsage:
+        """Merge a streaming chunk's usage into the accumulated total."""
+        if last is None:
+            return TokenUsage(
+                prompt_tokens=chunk.prompt_tokens,
+                completion_tokens=chunk.completion_tokens,
+                total_tokens=(chunk.total_tokens or chunk.prompt_tokens + chunk.completion_tokens),
+                cache_read_tokens=chunk.cache_read_tokens,
+                cache_creation_tokens=chunk.cache_creation_tokens,
+            )
+        # Accumulate: message_start sends prompt_tokens, message_delta sends completion_tokens.
+        return TokenUsage(
+            prompt_tokens=last.prompt_tokens + chunk.prompt_tokens,
+            completion_tokens=last.completion_tokens + chunk.completion_tokens,
+            total_tokens=(
+                last.prompt_tokens + chunk.prompt_tokens
+                + last.completion_tokens + chunk.completion_tokens
+            ),
+            cache_read_tokens=last.cache_read_tokens + chunk.cache_read_tokens,
+            cache_creation_tokens=last.cache_creation_tokens + chunk.cache_creation_tokens,
+        )
+
+    def _finalize_stream_usage(
+        self,
+        last_usage: Optional[TokenUsage],
+        estimated_usage: Optional[TokenUsage],
+        estimated_prompt_tokens: int,
+    ) -> Tuple[Optional[TokenUsage], bool]:
+        """Return (finalized_usage, should_emit_update).
+
+        Falls back to the local estimate when the provider omitted usage entirely,
+        or patches in prompt_tokens when the provider only emitted completion tokens.
+        """
+        if last_usage is None:
+            return estimated_usage, False
+        if estimated_prompt_tokens > 0 and last_usage.prompt_tokens <= 0:
+            merged_total = (
+                last_usage.total_tokens
+                if last_usage.total_tokens > 0
+                else estimated_prompt_tokens + last_usage.completion_tokens
+            )
+            patched = TokenUsage(
+                prompt_tokens=estimated_prompt_tokens,
+                completion_tokens=last_usage.completion_tokens,
+                total_tokens=merged_total,
+                cache_read_tokens=last_usage.cache_read_tokens,
+                cache_creation_tokens=last_usage.cache_creation_tokens,
+            )
+            return patched, True
+        return last_usage, False
+
     def _stream_llm_turn_inner(
         self, system_prompt: str, tools_schema: Optional[List],
     ) -> Generator[TurnEvent, None, Tuple[str, List[ToolCall], Optional[TokenUsage], Any]]:
@@ -1087,51 +1176,9 @@ class AgentLoop:
         last_usage: Optional[TokenUsage] = None
         raw_parts: Any = None
 
-        # Estimate full in-memory context so compaction decisions work
-        # even when provider streaming usage is missing.
-        full_messages = minify_messages(
-            self.session.get_messages_for_provider(context_window=0)
-        )
-        full_prompt_tokens = self._estimate_prompt_tokens(
-            full_messages, system_prompt,
-        )
-        if full_prompt_tokens > 0:
-            self._context_manager.update_usage(
-                TokenUsage(
-                    prompt_tokens=full_prompt_tokens,
-                    total_tokens=full_prompt_tokens,
-                )
-            )
-
-        # Compact context if approaching the token limit.
-        if self._context_manager.should_compact():
-            log_info(
-                f"Context compaction triggered (usage ratio: "
-                f"{self._context_manager.usage_ratio:.1%})"
-            )
-            self.session.messages = self._context_manager.compact_messages(
-                self.session.messages
-            )
-            # Rebuild after compaction
-            full_messages = None  # release memory
-
-        # Build prompt payload with context-window trimming for the provider.
-        ctx_window = self.config.provider.context_window
-        provider_messages = minify_messages(
-            self.session.get_messages_for_provider(context_window=ctx_window)
-        )
-
-        # Estimate prompt size for providers that don't emit streaming usage.
-        estimated_prompt_tokens = self._estimate_prompt_tokens(
-            provider_messages, system_prompt,
-        )
-        estimated_usage: Optional[TokenUsage] = None
-        if estimated_prompt_tokens > 0:
-            estimated_usage = TokenUsage(
-                prompt_tokens=estimated_prompt_tokens,
-                total_tokens=estimated_prompt_tokens,
-            )
-            self._context_manager.update_usage(estimated_usage)
+        provider_messages, estimated_prompt_tokens, estimated_usage = \
+            self._prepare_provider_messages(system_prompt)
+        if estimated_usage is not None:
             yield TurnEvent.usage_update(estimated_usage)
 
         stream = self.provider.chat_stream(
@@ -1170,65 +1217,25 @@ class AgentLoop:
                 except json.JSONDecodeError as je:
                     log_error(f"Malformed tool arguments for {tc_name} (id={tc_id}): {je}. Raw: {raw_args[:200]}")
                     args = {}
-                    # Emit an error event so the UI shows the parse failure
                     yield TurnEvent.error_event(
                         f"Warning: malformed arguments for tool '{tc_name}'. "
                         "The tool call will proceed with empty arguments."
                     )
-
                 tool_calls.append(ToolCall(id=tc_id, name=tc_name, arguments=args))
                 yield TurnEvent.tool_call_done(tc_id, tc_name, raw_args)
 
             if chunk.usage:
-                if last_usage is None:
-                    # First chunk (e.g. message_start): ensure total_tokens is set
-                    last_usage = TokenUsage(
-                        prompt_tokens=chunk.usage.prompt_tokens,
-                        completion_tokens=chunk.usage.completion_tokens,
-                        total_tokens=(
-                            chunk.usage.total_tokens
-                            or chunk.usage.prompt_tokens + chunk.usage.completion_tokens
-                        ),
-                        cache_read_tokens=chunk.usage.cache_read_tokens,
-                        cache_creation_tokens=chunk.usage.cache_creation_tokens,
-                    )
-                else:
-                    # Accumulate: message_start sends prompt_tokens,
-                    # message_delta sends completion_tokens.
-                    last_usage = TokenUsage(
-                        prompt_tokens=last_usage.prompt_tokens + chunk.usage.prompt_tokens,
-                        completion_tokens=last_usage.completion_tokens + chunk.usage.completion_tokens,
-                        total_tokens=(
-                            last_usage.prompt_tokens + chunk.usage.prompt_tokens
-                            + last_usage.completion_tokens + chunk.usage.completion_tokens
-                        ),
-                        cache_read_tokens=last_usage.cache_read_tokens + chunk.usage.cache_read_tokens,
-                        cache_creation_tokens=last_usage.cache_creation_tokens + chunk.usage.cache_creation_tokens,
-                    )
+                last_usage = self._accumulate_chunk_usage(last_usage, chunk.usage)
                 self._context_manager.update_usage(last_usage)
                 yield TurnEvent.usage_update(last_usage)
 
-            # Capture provider-specific raw parts (e.g. Gemini thought_signatures)
             if chunk.raw_parts is not None:
                 raw_parts = chunk.raw_parts
 
-        # If provider usage is missing or lacks prompt_tokens, keep the local
-        # estimate so session/context accounting remains meaningful.
-        if last_usage is None and estimated_usage is not None:
-            last_usage = estimated_usage
-        elif last_usage is not None and estimated_prompt_tokens > 0 and last_usage.prompt_tokens <= 0:
-            merged_total = (
-                last_usage.total_tokens
-                if last_usage.total_tokens > 0
-                else estimated_prompt_tokens + last_usage.completion_tokens
-            )
-            last_usage = TokenUsage(
-                prompt_tokens=estimated_prompt_tokens,
-                completion_tokens=last_usage.completion_tokens,
-                total_tokens=merged_total,
-                cache_read_tokens=last_usage.cache_read_tokens,
-                cache_creation_tokens=last_usage.cache_creation_tokens,
-            )
+        last_usage, need_usage_update = self._finalize_stream_usage(
+            last_usage, estimated_usage, estimated_prompt_tokens
+        )
+        if need_usage_update and last_usage is not None:
             self._context_manager.update_usage(last_usage)
             yield TurnEvent.usage_update(last_usage)
 

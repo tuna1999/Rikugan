@@ -180,84 +180,100 @@ class ChatView(QScrollArea):
     def handle_event(self, event: TurnEvent) -> None:
         """Process a TurnEvent and update the UI accordingly."""
         etype = event.type
-
-        if etype == TurnEventType.TEXT_DELTA:
-            self._hide_thinking()
-            self._reset_tool_run()
-            if self._current_assistant is None:
-                self._current_assistant = AssistantMessageWidget()
-                self._insert_widget(self._current_assistant)
-            self._current_assistant.append_text(event.text)
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.TEXT_DONE:
-            self._hide_thinking()
-            self._reset_tool_run()
-            if self._current_assistant is not None:
-                self._current_assistant.set_text(event.text)
-            self._current_assistant = None
-
-        elif etype == TurnEventType.TOOL_CALL_START:
-            self._hide_thinking()
-            tool_name = event.tool_name
-            tool_id = event.tool_call_id
-
-            tw = ToolCallWidget(tool_name, tool_id)
-            self._tool_widgets[tool_id] = tw
-            self._register_tool_widget(tool_name, tool_id, tw)
-
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.TOOL_CALL_ARGS_DELTA:
-            tw = self._tool_widgets.get(event.tool_call_id)
-            if tw:
-                tw.append_args_delta(event.tool_args)
-
-        elif etype == TurnEventType.TOOL_CALL_DONE:
-            tw = self._tool_widgets.get(event.tool_call_id)
-            if tw:
-                tw.set_arguments(event.tool_args)
-
-        elif etype == TurnEventType.TOOL_RESULT:
-            # A result marks the end of a consecutive tool-call run.
-            self._reset_tool_run()
-            tw = self._tool_widgets.get(event.tool_call_id)
-            if tw:
-                tw.set_result(event.tool_result, event.tool_is_error)
-            # Notify group if this tool belongs to one
-            group = self._group_map.get(event.tool_call_id)
-            if group:
-                group.notify_result(event.tool_is_error)
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.TURN_START:
-            self._current_assistant = None
-            self._reset_tool_run()
-            self._group_map.clear()
-            self._show_thinking()
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.TURN_END:
-            self._hide_thinking()
-            self._reset_tool_run()
-            self._current_assistant = None
-
+        if etype in (TurnEventType.TEXT_DELTA, TurnEventType.TEXT_DONE):
+            self._handle_text_event(event)
+        elif etype in (
+            TurnEventType.TOOL_CALL_START, TurnEventType.TOOL_CALL_ARGS_DELTA,
+            TurnEventType.TOOL_CALL_DONE, TurnEventType.TOOL_RESULT,
+            TurnEventType.TOOL_APPROVAL_REQUEST,
+        ):
+            self._handle_tool_event(event)
+        elif etype in (TurnEventType.TURN_START, TurnEventType.TURN_END, TurnEventType.CANCELLED):
+            self._handle_lifecycle_event(event)
+        elif etype in (
+            TurnEventType.PLAN_GENERATED, TurnEventType.PLAN_STEP_START, TurnEventType.PLAN_STEP_DONE,
+        ):
+            self._handle_plan_event(event)
+        elif etype in (TurnEventType.EXPLORATION_PHASE_CHANGE, TurnEventType.EXPLORATION_FINDING):
+            self._handle_exploration_event(event)
+        elif etype in (TurnEventType.USER_QUESTION, TurnEventType.SAVE_APPROVAL_REQUEST):
+            self._handle_question_event(event)
         elif etype == TurnEventType.ERROR:
             self._hide_thinking()
             self._reset_tool_run()
             self._insert_widget(ErrorMessageWidget(event.error or "Unknown error"))
             self._scroll_to_bottom()
 
-        elif etype == TurnEventType.USER_QUESTION:
+    def _handle_text_event(self, event: TurnEvent) -> None:
+        self._hide_thinking()
+        self._reset_tool_run()
+        if event.type == TurnEventType.TEXT_DELTA:
+            if self._current_assistant is None:
+                self._current_assistant = AssistantMessageWidget()
+                self._insert_widget(self._current_assistant)
+            self._current_assistant.append_text(event.text)
+            self._scroll_to_bottom()
+        else:  # TEXT_DONE
+            if self._current_assistant is not None:
+                self._current_assistant.set_text(event.text)
+            self._current_assistant = None
+
+    def _handle_tool_event(self, event: TurnEvent) -> None:
+        etype = event.type
+        if etype == TurnEventType.TOOL_CALL_START:
+            self._hide_thinking()
+            tw = ToolCallWidget(event.tool_name, event.tool_call_id)
+            self._tool_widgets[event.tool_call_id] = tw
+            self._register_tool_widget(event.tool_name, event.tool_call_id, tw)
+            self._scroll_to_bottom()
+        elif etype == TurnEventType.TOOL_CALL_ARGS_DELTA:
+            tw = self._tool_widgets.get(event.tool_call_id)
+            if tw:
+                tw.append_args_delta(event.tool_args)
+        elif etype == TurnEventType.TOOL_CALL_DONE:
+            tw = self._tool_widgets.get(event.tool_call_id)
+            if tw:
+                tw.set_arguments(event.tool_args)
+        elif etype == TurnEventType.TOOL_RESULT:
+            self._reset_tool_run()
+            tw = self._tool_widgets.get(event.tool_call_id)
+            if tw:
+                tw.set_result(event.tool_result, event.tool_is_error)
+            group = self._group_map.get(event.tool_call_id)
+            if group:
+                group.notify_result(event.tool_is_error)
+            self._scroll_to_bottom()
+        elif etype == TurnEventType.TOOL_APPROVAL_REQUEST:
             self._hide_thinking()
             self._reset_tool_run()
-            options = event.metadata.get("options", [])
-            widget = UserQuestionWidget(event.text, options)
-            widget.option_selected.connect(self._on_user_answer)
+            widget = ToolApprovalWidget(
+                event.tool_call_id, event.tool_name, event.tool_args, event.text,
+            )
+            widget.approved.connect(self._on_tool_approval)
             self._insert_widget(widget)
             self._scroll_to_bottom()
 
-        elif etype == TurnEventType.PLAN_GENERATED:
+    def _handle_lifecycle_event(self, event: TurnEvent) -> None:
+        etype = event.type
+        if etype == TurnEventType.TURN_START:
+            self._current_assistant = None
+            self._reset_tool_run()
+            self._group_map.clear()
+            self._show_thinking()
+            self._scroll_to_bottom()
+        elif etype == TurnEventType.TURN_END:
+            self._hide_thinking()
+            self._reset_tool_run()
+            self._current_assistant = None
+        elif etype == TurnEventType.CANCELLED:
+            self._hide_thinking()
+            self._reset_tool_run()
+            self._insert_widget(ErrorMessageWidget("Cancelled by user"))
+            self._scroll_to_bottom()
+
+    def _handle_plan_event(self, event: TurnEvent) -> None:
+        etype = event.type
+        if etype == TurnEventType.PLAN_GENERATED:
             self._hide_thinking()
             self._reset_tool_run()
             self._plan_view = PlanView()
@@ -266,73 +282,49 @@ class ChatView(QScrollArea):
             def _on_plan_approve(pv=self._plan_view):
                 pv.set_buttons_visible(False)
                 self._on_user_answer("approve")
-
             def _on_plan_reject(pv=self._plan_view):
                 pv.set_buttons_visible(False)
                 self._on_user_answer("reject")
-
             self._plan_view.set_approved_callback(_on_plan_approve)
             self._plan_view.set_rejected_callback(_on_plan_reject)
             self._insert_widget(self._plan_view)
             self._scroll_to_bottom()
-
         elif etype == TurnEventType.PLAN_STEP_START:
             if self._plan_view:
                 self._plan_view.set_step_status(event.plan_step_index, "active")
                 self._plan_view.set_buttons_visible(False)
             self._scroll_to_bottom()
-
         elif etype == TurnEventType.PLAN_STEP_DONE:
             if self._plan_view:
                 self._plan_view.set_step_status(event.plan_step_index, "done")
             self._scroll_to_bottom()
 
-        elif etype == TurnEventType.TOOL_APPROVAL_REQUEST:
+    def _handle_exploration_event(self, event: TurnEvent) -> None:
+        meta = event.metadata
+        if event.type == TurnEventType.EXPLORATION_PHASE_CHANGE:
             self._hide_thinking()
             self._reset_tool_run()
-            widget = ToolApprovalWidget(
-                event.tool_call_id, event.tool_name,
-                event.tool_args, event.text,
-            )
-            widget.approved.connect(self._on_tool_approval)
-            self._insert_widget(widget)
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.EXPLORATION_PHASE_CHANGE:
-            self._hide_thinking()
-            self._reset_tool_run()
-            meta = event.metadata
             self._insert_widget(ExplorationPhaseWidget(
-                meta.get("from_phase", ""),
-                meta.get("to_phase", ""),
-                event.text,
+                meta.get("from_phase", ""), meta.get("to_phase", ""), event.text,
             ))
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.EXPLORATION_FINDING:
-            meta = event.metadata
+        else:  # EXPLORATION_FINDING
             self._insert_widget(ExplorationFindingWidget(
-                meta.get("category", "general"),
-                event.text,
-                meta.get("address"),
-                meta.get("relevance", "medium"),
+                meta.get("category", "general"), event.text,
+                meta.get("address"), meta.get("relevance", "medium"),
             ))
-            self._scroll_to_bottom()
+        self._scroll_to_bottom()
 
-        elif etype == TurnEventType.SAVE_APPROVAL_REQUEST:
-            self._hide_thinking()
-            self._reset_tool_run()
+    def _handle_question_event(self, event: TurnEvent) -> None:
+        self._hide_thinking()
+        self._reset_tool_run()
+        if event.type == TurnEventType.SAVE_APPROVAL_REQUEST:
             options = ["Save All", "Discard All"]
-            widget = UserQuestionWidget(event.text, options)
-            widget.option_selected.connect(self._on_user_answer)
-            self._insert_widget(widget)
-            self._scroll_to_bottom()
-
-        elif etype == TurnEventType.CANCELLED:
-            self._hide_thinking()
-            self._reset_tool_run()
-            self._insert_widget(ErrorMessageWidget("Cancelled by user"))
-            self._scroll_to_bottom()
+        else:  # USER_QUESTION
+            options = event.metadata.get("options", [])
+        widget = UserQuestionWidget(event.text, options)
+        widget.option_selected.connect(self._on_user_answer)
+        self._insert_widget(widget)
+        self._scroll_to_bottom()
 
     def _on_tool_approval(self, tool_call_id: str, decision: str) -> None:
         """Forward tool approval decision to the panel/controller."""

@@ -27,11 +27,11 @@ try:
     # Cache frequently-used IDA modules to avoid repeated importlib lookups
     try:
         _idc = importlib.import_module("idc")
-    except Exception:
+    except ImportError:
         pass
     try:
         _ida_kernwin = importlib.import_module("ida_kernwin")
-    except Exception:
+    except ImportError:
         pass
 except Exception:
     try:
