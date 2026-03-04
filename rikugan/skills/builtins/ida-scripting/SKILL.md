@@ -84,32 +84,105 @@ for ref in idautils.DataRefsTo(ea):
 ```
 
 ### Types (IDA 9+)
+
+**Critical: `udm_t.offset` is in BITS, not bytes. `udm_t.size` is also in BITS.**
+
 ```python
-# Create struct
-tif = ida_typeinf.tinfo_t()
-udt = ida_typeinf.udt_type_data_t()
-udm = ida_typeinf.udm_t()
-udm.name = "field1"
-udm.type = ida_typeinf.tinfo_t(ida_typeinf.BT_INT32)
-udm.offset = 0
-udt.push_back(udm)
-tif.create_udt(udt, ida_typeinf.BTF_STRUCT)
-tif.set_named_type(None, "MyStruct")
+import ida_typeinf
+
+# Helper: make a simple integer tinfo_t
+def make_int_type(byte_size: int, signed: bool = False) -> ida_typeinf.tinfo_t:
+    bt_map = {
+        (1, False): ida_typeinf.BT_INT8,
+        (1, True):  ida_typeinf.BT_INT8,
+        (2, False): ida_typeinf.BT_INT16,
+        (2, True):  ida_typeinf.BT_INT16,
+        (4, False): ida_typeinf.BT_INT32,
+        (4, True):  ida_typeinf.BT_INT32,
+        (8, False): ida_typeinf.BT_INT64,
+        (8, True):  ida_typeinf.BT_INT64,
+    }
+    t = ida_typeinf.tinfo_t()
+    t.create_simple_type(bt_map[(byte_size, signed)])
+    return t
+
+# Helper: make a pointer type
+def make_ptr_type(inner: ida_typeinf.tinfo_t) -> ida_typeinf.tinfo_t:
+    pd = ida_typeinf.ptr_type_data_t()
+    pd.obj_type = inner
+    t = ida_typeinf.tinfo_t()
+    t.create_ptr(pd)
+    return t
+
+# Helper: make an array type
+def make_array_type(elem: ida_typeinf.tinfo_t, count: int) -> ida_typeinf.tinfo_t:
+    ad = ida_typeinf.array_type_data_t()
+    ad.elem_type = elem
+    ad.nelems = count
+    t = ida_typeinf.tinfo_t()
+    t.create_array(ad)
+    return t
+
+# Build struct — offsets in BITS
+def make_struct(name: str, fields: list) -> ida_typeinf.tinfo_t:
+    """fields = [(name, tinfo_t, byte_offset), ...]"""
+    udt = ida_typeinf.udt_type_data_t()
+    for fname, ftype, byte_off in fields:
+        udm = ida_typeinf.udm_t()
+        udm.name = fname
+        udm.type = ftype
+        udm.offset = byte_off * 8   # ← BITS, not bytes
+        udt.push_back(udm)
+    tif = ida_typeinf.tinfo_t()
+    tif.create_udt(udt, ida_typeinf.BTF_STRUCT)
+    tif.set_named_type(None, name, ida_typeinf.NTF_REPLACE)
+    return tif
+
+# Example: struct Elf32_auxv_entry { uint32_t a_type; uint32_t a_val; }
+auxv_tif = make_struct("Elf32_auxv_entry", [
+    ("a_type", make_int_type(4, False), 0),
+    ("a_val",  make_int_type(4, False), 4),
+])
+
+# Example: struct with pointer and array fields
+char_ptr = make_ptr_type(make_int_type(1))          # char*
+char_pp  = make_ptr_type(char_ptr)                  # char**
+u8_arr   = make_array_type(make_int_type(1), 16)    # uint8_t[16]
+make_struct("StartupInfo", [
+    ("argv",  char_pp, 0),
+    ("buf",   u8_arr,  8),
+])
+
+# Reference a previously defined struct by name
+def get_named_type(name: str) -> ida_typeinf.tinfo_t:
+    t = ida_typeinf.tinfo_t()
+    if not t.get_named_type(None, name):
+        raise ValueError(f"Type '{name}' not found in type library")
+    return t
 
 # Apply type to address
-ida_typeinf.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE)
+ida_typeinf.apply_tinfo(ea, auxv_tif, ida_typeinf.TINFO_DEFINITE)
 
-# Parse C declaration
+# Validate after creation
+t = ida_typeinf.tinfo_t()
+if t.get_named_type(None, "Elf32_auxv_entry"):
+    print(f"OK: {t.dstr()}, size={t.get_size()} bytes")
+else:
+    print("ERROR: type not registered")
+
+# Simpler alternative for well-known C types: parse C declaration directly
+# Works well for types IDA already knows; avoid for custom typedefs
 ida_typeinf.apply_cdecl(None, ea, "int __cdecl func(int a, char *b)")
 
 # Create enum
 edt = ida_typeinf.enum_type_data_t()
-edm = ida_typeinf.edm_t()
-edm.name = "VAL_A"; edm.value = 0
-edt.push_back(edm)
-tif2 = ida_typeinf.tinfo_t()
-tif2.create_enum(edt)
-tif2.set_named_type(None, "MyEnum")
+for vname, vval in [("VAL_A", 0), ("VAL_B", 1)]:
+    edm = ida_typeinf.edm_t()
+    edm.name = vname; edm.value = vval
+    edt.push_back(edm)
+tif_enum = ida_typeinf.tinfo_t()
+tif_enum.create_enum(edt)
+tif_enum.set_named_type(None, "MyEnum", ida_typeinf.NTF_REPLACE)
 ```
 
 ### Segments & Strings
@@ -205,5 +278,10 @@ val = node.hashstr("key")
 - `BADADDR` = `0xFFFFFFFF` (32-bit) or `0xFFFFFFFFFFFFFFFF` (64-bit) — always compare against it.
 - `ida_hexrays.decompile()` can raise `DecompilationFailure` — always wrap in try/except.
 - IDA 9 removed `ida_struct`/`ida_enum` — use `ida_typeinf` with `udt_type_data_t`/`udm_t`/`enum_type_data_t`/`edm_t`.
+- **`udm_t.offset` is in BITS, not bytes** — always multiply byte offset by 8.
+- **Never use `tinfo_t(BT_INT32)` constructor** — call `t.create_simple_type(BT_INT32)` explicitly; the single-arg constructor is unreliable across IDA versions.
+- **Always pass `NTF_REPLACE`** to `set_named_type()` when redefining a type; omitting it may silently fail on re-runs.
+- **Validate after creation** — call `t.get_named_type(None, name)` and `t.dstr()` to confirm the type registered correctly.
+- **Dependency order** — define inner struct types before outer ones; look them up with `get_named_type()` not by raw `tinfo_t`.
 - `ida_bytes.get_strlit_contents()` returns `bytes`, not `str` — decode with `.decode('utf-8', errors='replace')`.
 - Process execution (subprocess, os.system, etc.) is blocked. Static analysis only.

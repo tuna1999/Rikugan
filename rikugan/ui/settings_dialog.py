@@ -415,7 +415,10 @@ class SettingsDialog(QDialog):
 
     def _on_provider_changed(self, provider: str) -> None:
         # Persist edits from the previous provider before switching.
-        self._sync_config_from_ui()
+        # Skip sync if switch_provider was already called externally (e.g. _on_add_custom_provider)
+        # to avoid corrupting the new provider's config with stale UI values.
+        if self._config.provider.name != provider:
+            self._sync_config_from_ui()
 
         # Use config.switch_provider() to snapshot current & restore saved
         self._config.switch_provider(provider)

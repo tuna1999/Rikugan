@@ -385,7 +385,7 @@ class RikuganPanelCore(QWidget):
         has_messages = session and session.messages
         if has_messages:
             ctx_window = self._config.provider.context_window or 200000
-            used = session.last_prompt_tokens or session.total_usage.total_tokens
+            used = session.last_prompt_tokens if session.last_prompt_tokens is not None else session.total_usage.total_tokens
             pct = min(int(used * 100 / ctx_window), 100) if ctx_window > 0 else 0
             result = self._show_new_chat_dialog(pct)
             if result == "no":
@@ -528,7 +528,7 @@ class RikuganPanelCore(QWidget):
         if token_count is None:
             session = self._ctrl.session
             # Show current context size (last prompt), not cumulative total
-            token_count = session.last_prompt_tokens or session.total_usage.total_tokens
+            token_count = session.last_prompt_tokens if session.last_prompt_tokens is not None else session.total_usage.total_tokens
         ctx_window = self._config.provider.context_window or 0
         self._context_bar.set_tokens(token_count, ctx_window)
 
@@ -729,7 +729,7 @@ class RikuganPanelCore(QWidget):
             # Use prompt_tokens from the event directly — session hasn't
             # been updated yet during streaming, so session.last_prompt_tokens
             # would be stale.  prompt_tokens reflects current context size.
-            token_count = event.usage.prompt_tokens or event.usage.total_tokens
+            token_count = event.usage.prompt_tokens if event.usage.prompt_tokens is not None else event.usage.total_tokens
             if token_count > 0:
                 self._update_token_display(token_count)
         if event.type in (TurnEventType.USER_QUESTION, TurnEventType.SAVE_APPROVAL_REQUEST,

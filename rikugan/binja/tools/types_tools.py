@@ -233,9 +233,57 @@ def _build_struct_decl(name: str, fields: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _redefine_struct_with_builder(bv: Any, name: str, fields: List[Dict[str, Any]]) -> bool:
+    """Build a struct using BN's StructureBuilder API (reliable, version-agnostic)."""
+    bn = get_bn_module()
+    if bn is None:
+        return False
+    try:
+        sb_cls = getattr(bn, "StructureBuilder", None)
+        if sb_cls is None:
+            return False
+        sb = sb_cls.create()
+        for f in fields:
+            fname = f["name"]
+            ftype_str = f.get("type", "int")
+            off = f.get("offset")
+            try:
+                ftype, _ = parse_type_string(bv, ftype_str)
+            except Exception:
+                continue
+            if isinstance(off, int) and off >= 0:
+                insert = getattr(sb, "insert", None)
+                if callable(insert):
+                    insert(off, ftype, fname)
+                    continue
+            append = getattr(sb, "append", None)
+            if callable(append):
+                append(ftype, fname)
+        struct_type_fn = getattr(bn, "Type", None)
+        if struct_type_fn is not None:
+            struct_type_fn = getattr(struct_type_fn, "structure_type", None)
+        if callable(struct_type_fn):
+            struct_type = struct_type_fn(sb)
+        else:
+            struct_type = sb.immutable_copy() if hasattr(sb, "immutable_copy") else sb
+        return define_user_type(bv, name, struct_type)
+    except Exception as e:
+        log_debug(f"_redefine_struct_with_builder failed: {e}")
+        return False
+
+
 def _redefine_struct(bv: Any, name: str, fields: List[Dict[str, Any]]) -> bool:
+    # Primary: use StructureBuilder directly — reliably adds fields across BN versions.
+    if _redefine_struct_with_builder(bv, name, fields):
+        # Verify fields were registered; fall through to C-parse path if empty.
+        t = _get_type_by_name(bv, name)
+        if t is not None and _extract_struct_members(t):
+            return True
+        log_debug("_redefine_struct_with_builder produced empty struct, trying C-parse path")
+
+    # Fallback: parse C declaration and register via define_user_type.
     decl = _build_struct_decl(name, fields)
-    log_debug(f"_redefine_struct decl:\n{decl}")
+    log_debug(f"_redefine_struct C-parse decl:\n{decl}")
     parsed = _define_types_from_source(bv, decl)
     log_debug(f"_redefine_struct parsed keys: {list(parsed.keys())}")
     # BN may return the key as "Foo" or "struct Foo" depending on version

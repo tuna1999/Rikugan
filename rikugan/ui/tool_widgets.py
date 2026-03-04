@@ -311,6 +311,9 @@ class _SharedSpinnerTimer:
 
     def register(self, widget: "ToolCallWidget") -> None:
         self._widgets.add(widget)
+        # Auto-unregister if Qt deletes the widget before _stop_spinner() is called.
+        # The default-arg capture (w=widget) avoids a closure over a loop variable.
+        widget.destroyed.connect(lambda _=None, w=widget: self._widgets.discard(w))
         if not self._timer.isActive():
             self._timer.start()
 
@@ -320,8 +323,17 @@ class _SharedSpinnerTimer:
             self._timer.stop()
 
     def _tick(self) -> None:
+        stale: set = set()
         for w in list(self._widgets):
-            w._spin_tick()
+            try:
+                w._spin_tick()
+            except RuntimeError:
+                # Shiboken raises RuntimeError when the C++ object was already deleted.
+                stale.add(w)
+        if stale:
+            self._widgets -= stale
+            if not self._widgets and self._timer.isActive():
+                self._timer.stop()
 
     @classmethod
     def shutdown(cls) -> None:

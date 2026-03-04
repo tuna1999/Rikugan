@@ -1566,7 +1566,7 @@ class AgentLoop:
 
     def _build_tools_schema(self, active_skill: Any, use_exploration_mode: bool) -> list:
         """Build the full tool schema list for a run, including pseudo-tools."""
-        tools_schema = self.tools.to_provider_format()
+        tools_schema = list(self.tools.to_provider_format())
 
         # Filter to skill-allowed tools if the skill restricts them
         if active_skill and active_skill.allowed_tools:

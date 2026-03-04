@@ -730,10 +730,28 @@ def apply_type_to_variable(
 
     for lv in cfunc.get_lvars():
         if lv.name == var_name:
-            ok = ida_hexrays.set_lvar_type(cfunc.entry_ea, lv, tif)
-            if ok:
-                return f"Set type of '{var_name}' to '{type_str}'"
-            return f"Failed to set type on '{var_name}'"
+            # Approach 1: set_lvar_type (IDA 7.6+)
+            set_lvar_type_fn = getattr(ida_hexrays, "set_lvar_type", None)
+            if set_lvar_type_fn is not None:
+                ok = set_lvar_type_fn(cfunc.entry_ea, lv, tif)
+                if ok:
+                    return f"Set type of '{var_name}' to '{type_str}'"
+
+            # Approach 2: lvar_saved_info_t + modify_user_lvars (older IDA builds)
+            try:
+                lsi = ida_hexrays.lvar_saved_info_t()
+                lsi.ll = lv  # lvar_t inherits lvar_locator_t
+                lsi.type = tif
+                lsi.size = tif.get_size()
+                lvvec = ida_hexrays.lvar_uservec_t()
+                lvvec.push_back(lsi)
+                ok2 = ida_hexrays.modify_user_lvars(cfunc.entry_ea, lvvec)
+                if ok2:
+                    return f"Set type of '{var_name}' to '{type_str}'"
+            except Exception as fb_e:
+                log_debug(f"modify_user_lvars fallback failed for '{var_name}': {fb_e}")
+
+            return f"Failed to retype '{var_name}' — try right-click → Set lvar type in the decompiler"
 
     return f"Variable '{var_name}' not found in 0x{ea:x}"
 
