@@ -76,12 +76,11 @@ Subagents run in complete isolation from the parent session. They are essentiall
 
 The result is a much deeper and faster analysis than a single agent could do alone — and it keeps the main context window clean.
 
-
 During exploration, it also renames functions when it has high confidence about what a function actually does.
 
-### Natural Language Patches/modding
+### Natural Language Patches/modding (Experimental)
 
-This is an feature designed to treat the entire binary as source code. The idea is, binary is code, in a certain way a project and in certain instance, it's ***text***, LLMs are great in reading text. 
+This is an feature designed to treat the entire binary as source code. The idea is, binary is code, which means that in some way, it's ***text***, LLMs are great in reading/writing text. 
 
 We know that agentic coding is excellent in reading and editing code, so why not do the same for binaries ? the `/modify` feature is exactly that, it's like code agent now can work on the compiled binary rather the project itself!
 
@@ -160,7 +159,7 @@ install_ida.bat "C:\Users\you\AppData\Roaming\Hex-Rays\IDA Pro"
 install_binaryninja.bat "C:\Users\you\AppData\Roaming\Binary Ninja"
 ```
 
-Installers create plugin links/junctions, install dependencies, and initialize host-specific Rikugan config directories.
+Installers create plugin, install dependencies, and initialize host-specific Rikugan config directories.
 
 ### Set your API key
 
