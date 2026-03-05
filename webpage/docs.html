@@ -374,13 +374,13 @@ cd rikugan</code></pre>
 <pre><code class="language-json">{
   "provider": {
     "name": "anthropic",
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-6",
     "api_key": "sk-...",
     "api_base": ""
   },
-  "max_tokens": 4096,
-  "temperature": 0.3,
-  "context_window": 128000,
+  "max_tokens": 16384,
+  "temperature": 0.2,
+  "context_window": 200000,
   "checkpoint_auto_save": true,
   "max_tool_result_chars": 8000
 }</code></pre>
@@ -392,9 +392,9 @@ cd rikugan</code></pre>
     <tr><td><code>provider.model</code></td><td>string</td><td>Model ID (e.g., <code>claude-sonnet-4-20250514</code>, <code>gpt-4o</code>)</td></tr>
     <tr><td><code>provider.api_key</code></td><td>string</td><td>API key for the provider</td></tr>
     <tr><td><code>provider.api_base</code></td><td>string</td><td>Custom API base URL (for openai_compat or Ollama)</td></tr>
-    <tr><td><code>max_tokens</code></td><td>int</td><td>Max output tokens per response (default 4096)</td></tr>
-    <tr><td><code>temperature</code></td><td>float</td><td>Sampling temperature (default 0.3)</td></tr>
-    <tr><td><code>context_window</code></td><td>int</td><td>Max context window size in tokens (default 128000)</td></tr>
+    <tr><td><code>max_tokens</code></td><td>int</td><td>Max output tokens per response (default 16384)</td></tr>
+    <tr><td><code>temperature</code></td><td>float</td><td>Sampling temperature (default 0.2)</td></tr>
+    <tr><td><code>context_window</code></td><td>int</td><td>Max context window size in tokens (default 200000)</td></tr>
     <tr><td><code>checkpoint_auto_save</code></td><td>bool</td><td>Auto-save sessions after each turn (default true)</td></tr>
     <tr><td><code>max_tool_result_chars</code></td><td>int</td><td>Truncate tool results beyond this limit (default 8000)</td></tr>
   </table>
@@ -543,8 +543,9 @@ cd rikugan</code></pre>
     }
   }
 }</code></pre>
-<p>MCP servers are started when the plugin loads. Their tools appear with the prefix <code>mcp_&lt;server&gt;_&lt;tool&gt;</code>. Set <code>"enabled": false</code> to keep a server configured without starting it.</p>
-<p>Use <code>/mcp</code> in the chat to check server health status.</p>
+<p>MCP servers are started in background threads when the plugin loads. Their tools appear with the prefix <code>mcp_&lt;server&gt;_&lt;tool&gt;</code>. Set <code>"enabled": false</code> to keep a server configured without starting it.</p>
+<p>The MCP client uses <strong>JSON-RPC 2.0 with Content-Length framing</strong> and sends periodic heartbeat pings every 30 seconds to detect unresponsive servers. A server is marked unhealthy if a heartbeat times out; it recovers automatically when pings succeed again.</p>
+<p>Use <code>/mcp</code> in the chat to check the health status of all connected servers.</p>
 
 <h2 id="custom-skills">Custom Skills</h2>
 <p>Create custom skills in your user directory:</p>
