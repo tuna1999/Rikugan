@@ -437,6 +437,8 @@ class AnthropicProvider(LLMProvider):
                             yield StreamChunk(usage=TokenUsage(
                                 prompt_tokens=msg.usage.input_tokens,
                                 completion_tokens=0,
+                                cache_read_tokens=getattr(msg.usage, "cache_read_input_tokens", 0) or 0,
+                                cache_creation_tokens=getattr(msg.usage, "cache_creation_input_tokens", 0) or 0,
                             ))
 
         except Exception as e:

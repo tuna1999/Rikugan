@@ -1358,8 +1358,8 @@ class AgentLoop:
 
         provider_messages, estimated_prompt_tokens, estimated_usage = \
             self._prepare_provider_messages(system_prompt)
-        if estimated_usage is not None:
-            yield TurnEvent.usage_update(estimated_usage)
+        # Do not emit a pre-stream estimate — it causes the display to jump
+        # to an estimated value only to be overwritten by real data moments later.
 
         stream = self.provider.chat_stream(
             messages=provider_messages,
@@ -1407,7 +1407,7 @@ class AgentLoop:
             if chunk.usage:
                 last_usage = self._accumulate_chunk_usage(last_usage, chunk.usage)
                 self._context_manager.update_usage(last_usage)
-                yield TurnEvent.usage_update(last_usage)
+                # Do not yield per-chunk updates — emit one final update after the stream
 
             if chunk.raw_parts is not None:
                 raw_parts = chunk.raw_parts
@@ -1415,8 +1415,9 @@ class AgentLoop:
         last_usage, need_usage_update = self._finalize_stream_usage(
             last_usage, estimated_usage, estimated_prompt_tokens
         )
-        if need_usage_update and last_usage is not None:
-            self._context_manager.update_usage(last_usage)
+        if last_usage is not None:
+            if need_usage_update:
+                self._context_manager.update_usage(last_usage)
             yield TurnEvent.usage_update(last_usage)
 
         assistant_text = "".join(assistant_text_parts)

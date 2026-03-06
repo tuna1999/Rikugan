@@ -43,6 +43,11 @@ class TokenUsage:
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
 
+    @property
+    def context_tokens(self) -> int:
+        """Total tokens occupying the context window (including cache hits/writes)."""
+        return self.prompt_tokens + self.cache_read_tokens + self.cache_creation_tokens
+
 
 @dataclass
 class Message:

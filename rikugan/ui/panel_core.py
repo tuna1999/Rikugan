@@ -737,7 +737,7 @@ class RikuganPanelCore(QWidget):
             # Use prompt_tokens from the event directly — session hasn't
             # been updated yet during streaming, so session.last_prompt_tokens
             # would be stale.  prompt_tokens reflects current context size.
-            token_count = event.usage.prompt_tokens if event.usage.prompt_tokens is not None else event.usage.total_tokens
+            token_count = event.usage.context_tokens if event.usage.context_tokens > 0 else event.usage.total_tokens
             if token_count > 0:
                 self._update_token_display(token_count)
         if event.type in (TurnEventType.USER_QUESTION, TurnEventType.SAVE_APPROVAL_REQUEST,

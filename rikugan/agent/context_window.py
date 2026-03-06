@@ -31,7 +31,7 @@ class ContextWindowManager:
         # Use prompt_tokens as primary metric — it reflects how much of the
         # context window the conversation occupies.  Fall back to total_tokens
         # if prompt_tokens is unavailable (e.g. non-Anthropic providers).
-        effective = usage.prompt_tokens or usage.total_tokens
+        effective = usage.context_tokens or usage.total_tokens
         # Only update if we get a meaningful value (avoid zeroing out from
         # partial streaming chunks that report total_tokens=0).
         if effective > 0:

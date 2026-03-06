@@ -74,7 +74,7 @@ class SessionState:
             self.total_usage.total_tokens += msg.token_usage.total_tokens
             # Track the last prompt size as current context usage
             if msg.token_usage.prompt_tokens > 0:
-                self.last_prompt_tokens = msg.token_usage.prompt_tokens
+                self.last_prompt_tokens = msg.token_usage.context_tokens
 
     def clear(self) -> None:
         self.messages.clear()
