@@ -247,7 +247,8 @@ class MCPClient:
 
                     # Initialize handshake
                     init_result = await session.initialize()
-                    log_debug(f"MCP[{self.name}]: initialized, server: {init_result.server_info}")
+                    server_info = getattr(init_result, "server_info", None) or getattr(init_result, "serverInfo", None)
+                    log_debug(f"MCP[{self.name}]: initialized, server: {server_info}")
 
                     # Discover tools
                     tools_result = await session.list_tools()
