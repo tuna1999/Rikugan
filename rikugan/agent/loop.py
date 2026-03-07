@@ -32,7 +32,7 @@ from .exploration_mode import (
     KnowledgeBase, PatchRecord,
 )
 from .minify import minify_text, minify_messages
-from ..core.sanitize import sanitize_tool_result, sanitize_skill_body
+from ..core.sanitize import sanitize_tool_result, sanitize_skill_body, strip_injection_markers
 from ..state.session import SessionState
 
 # Minimum acceptable context window; smaller values get flagged by /doctor.
@@ -1114,8 +1114,9 @@ class AgentLoop:
             log_error(f"Tool {tc.name} unexpected error: {e}\n{traceback.format_exc()}")
 
         # Sanitize tool output before it enters the conversation.
-        # Error messages are internal and don't need sandboxing.
-        sanitized = sanitize_tool_result(result, tc.name) if not is_error else result
+        # Error messages may contain attacker-controlled content (e.g. function
+        # names), so strip injection markers even though we skip full wrapping.
+        sanitized = sanitize_tool_result(result, tc.name) if not is_error else strip_injection_markers(result)
         tr = ToolResult(tool_call_id=tc.id, name=tc.name, content=sanitized, is_error=is_error)
         yield TurnEvent.tool_result_event(tc.id, tc.name, result, is_error)
         return tr
