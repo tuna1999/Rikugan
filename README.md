@@ -144,6 +144,36 @@ Runs in plan mode, so you can review the plan before the agent starts patching.
 
 ## Installation
 
+### One-line install
+
+The quickest way to install. Auto-detects IDA Pro, Binary Ninja, or both.
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/buzzer-re/Rikugan/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/buzzer-re/Rikugan/main/install.ps1 | iex
+```
+
+To install for a specific host only:
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/buzzer-re/Rikugan/main/install.sh | bash -s -- --ida
+curl -fsSL https://raw.githubusercontent.com/buzzer-re/Rikugan/main/install.sh | bash -s -- --binja
+```
+
+```powershell
+# Windows
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/buzzer-re/Rikugan/main/install.ps1))) -Target ida
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/buzzer-re/Rikugan/main/install.ps1))) -Target binja
+```
+
+### Manual install
+
 Clone this repository, then run the installer for your target host:
 
 **IDA Pro (Linux / macOS):**
