@@ -3,10 +3,6 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "rikugan/**/*.py"
-      - "tests/**/*.py"
-      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
@@ -85,6 +81,26 @@ jobs:
       - name: Run objective scan
         run: desloppify scan --profile objective --no-badge
 
+      - name: Score regression gate
+        run: |
+          python -c "
+          import json, sys
+
+          try:
+              data = json.load(open('.desloppify/query.json'))
+              score = float(data.get('objective_score', 0))
+          except Exception:
+              print('Could not read desloppify score — failing safe')
+              sys.exit(1)
+
+          BASELINE = 89.0
+          TOLERANCE = 0.5
+
+          if score < BASELINE - TOLERANCE:
+              sys.exit(f'Score {score}/100 is below baseline {BASELINE} (tolerance {TOLERANCE}) — fix before merging')
+          print(f'OK — objective score {score}/100 (baseline {BASELINE})')
+          "
+
       - name: Get changed Python files
         id: changed
         run: |
@@ -92,14 +108,14 @@ jobs:
           echo "Changed files:"
           cat /tmp/changed_files.txt
 
-      - name: Gate on findings in changed files only
+      - name: Gate on security findings in changed files
         run: |
           python -c "
           import json, subprocess, sys
 
           changed = [l.strip() for l in open('/tmp/changed_files.txt') if l.strip()]
           if not changed:
-              print('No Python files changed — skipping quality gate')
+              print('No Python files changed — skipping security gate')
               sys.exit(0)
 
           findings = []
@@ -119,13 +135,12 @@ jobs:
               print(f'OK — no open findings in {len(changed)} changed file(s)')
               sys.exit(0)
 
-          # Security findings in changed files are always a hard fail
           security = [f for f in findings if f.get('detector') == 'security']
           other    = [f for f in findings if f.get('detector') != 'security']
 
           for f in security:
               print(f\"SECURITY: {f.get('file')} — {f.get('message', f.get('id', '?'))}\")
-          for f in other[:5]:  # show up to 5 non-security findings
+          for f in other[:5]:
               print(f\"  {f.get('detector')}: {f.get('file')} — {f.get('message', f.get('id', '?'))}\")
 
           if security:
@@ -133,3 +148,25 @@ jobs:
 
           print(f'Advisory: {len(other)} non-security finding(s) in changed files (not blocking)')
           "
+
+  # Single gate job — mark this as a required status check in branch protection
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [lint, typecheck, test, quality]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        run: |
+          echo "lint:      ${{ needs.lint.result }}"
+          echo "typecheck: ${{ needs.typecheck.result }}"
+          echo "test:      ${{ needs.test.result }}"
+          echo "quality:   ${{ needs.quality.result }}"
+
+          if [[ "${{ needs.lint.result }}" != "success" ]] ||
+             [[ "${{ needs.typecheck.result }}" != "success" ]] ||
+             [[ "${{ needs.test.result }}" != "success" ]] ||
+             [[ "${{ needs.quality.result }}" != "success" ]]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
