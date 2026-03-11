@@ -120,9 +120,7 @@ class UserMessageWidget(QFrame):
         )
         self._content.setStyleSheet("color: #d4d4d4; font-size: 13px;")
         self._content.setMinimumWidth(0)
-        self._content.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
+        self._content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._content)
 
 
@@ -259,9 +257,7 @@ class AssistantMessageWidget(QFrame):
         self._content.setStyleSheet("color: #d4d4d4; font-size: 13px;")
         # Prevent the label from requesting more width than its parent
         self._content.setMinimumWidth(0)
-        self._content.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
+        self._content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._content)
 
     def _render(self) -> None:
@@ -586,7 +582,5 @@ class ErrorMessageWidget(QFrame):
         )
         self._content.setStyleSheet("color: #f44747; font-size: 12px;")
         self._content.setMinimumWidth(0)
-        self._content.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
+        self._content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._content)

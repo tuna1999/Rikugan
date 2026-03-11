@@ -61,9 +61,7 @@ class ChatView(QScrollArea):
         self._container.setObjectName("chat_container")
         # Prevent the container from requesting more width than the viewport;
         # this is critical for word-wrap to work inside a QScrollArea.
-        self._container.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
-        )
+        self._container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self._layout = QVBoxLayout(self._container)
         self._layout.setContentsMargins(4, 4, 4, 4)
         self._layout.setSpacing(4)
