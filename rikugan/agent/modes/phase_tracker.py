@@ -41,7 +41,8 @@ class ModePhaseTracker:
         The ``AgentLoop`` instance (provides access to ``session.metadata``).
     phases:
         Ordered list of phase names.  The order determines which phases are
-        skipped on resume — any phase *before* the persisted phase is skipped.
+        skipped on resume — the interrupted phase and all phases before it
+        are skipped (their partial results are in the conversation history).
     """
 
     def __init__(self, loop: AgentLoop, phases: list[str]) -> None:
@@ -68,8 +69,9 @@ class ModePhaseTracker:
     def should_run(self, phase: str) -> bool:
         """Return ``True`` if *phase* should execute.
 
-        A phase is skipped if the persisted resume phase is *after* it in
-        the ordered phase list.
+        The interrupted phase and all phases before it are skipped — they
+        already ran (partially) and their results are in the conversation
+        history.  Execution resumes at the *next* phase.
         """
         if not self._resume_phase:
             return True  # fresh start — run everything
@@ -78,7 +80,7 @@ class ModePhaseTracker:
             phase_idx = self._phases.index(phase)
         except ValueError:
             return True  # unknown phase — run it to be safe
-        return phase_idx >= resume_idx
+        return phase_idx > resume_idx
 
     def enter(self, phase: str) -> None:
         """Mark *phase* as the currently active phase.
