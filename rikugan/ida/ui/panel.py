@@ -49,6 +49,7 @@ class RikuganPanel(idaapi.PluginForm):
         self.shutdown()
         if self._root is not None:
             self._root.setParent(None)
+            self._root.deleteLater()
             self._root = None
 
     def show(self):
@@ -64,6 +65,7 @@ class RikuganPanel(idaapi.PluginForm):
         if self._core is not None:
             self._core.shutdown()
             self._core.setParent(None)
+            self._core.deleteLater()
             self._core = None
 
     def prefill_input(self, text: str, auto_submit: bool = False) -> None:

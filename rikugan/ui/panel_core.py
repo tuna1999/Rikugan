@@ -748,8 +748,15 @@ class RikuganPanelCore(QWidget):
                 self._ui_hooks = None
             if tools_form is not None:
                 tools_form.hide()
+                # In IDA mode, hide() orphans the tools widget via
+                # OnClose -> setParent(None).  Schedule it for deletion
+                # while Python is still alive to prevent crashes during
+                # QApplication::~QApplication() exit cleanup.
+                if tools_panel is not None:
+                    tools_panel.deleteLater()
             elif tools_panel is not None:
                 tools_panel.close()
+            self._tools_panel = None
             self._ctrl.shutdown()
         except Exception as e:
             log_error(f"Panel teardown error: {e}")

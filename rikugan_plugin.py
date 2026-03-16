@@ -65,6 +65,15 @@ class RikuganPlugmod(idaapi.plugmod_t):
                 panel.close()
             except Exception as e:
                 idaapi.msg(f"[Rikugan] Panel close error: {e}\n")
+        # Flush deferred widget deletions while Python is still alive.
+        # Without this, orphaned PySide6-wrapped QFrames survive until
+        # QApplication::~QApplication() where their C++ destructors call
+        # disconnectNotify -> PyErr_Occurred on a dead interpreter -> crash.
+        try:
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+        except Exception:
+            pass
 
     def _toggle_panel(self) -> None:
         try:
