@@ -58,7 +58,10 @@ def _read_oauth_from_keychain() -> str | None:
         return None
 
 
-def resolve_anthropic_auth(api_key: str = "") -> tuple[str, str]:
+def resolve_anthropic_auth(
+    api_key: str = "",
+    allow_keychain: bool = True,
+) -> tuple[str, str]:
     """Resolve the best available Anthropic credential.
 
     Returns (token, auth_type) where auth_type is "api_key" or "oauth".
@@ -66,7 +69,7 @@ def resolve_anthropic_auth(api_key: str = "") -> tuple[str, str]:
       1. Explicit api_key argument
       2. ANTHROPIC_API_KEY env var
       3. CLAUDE_CODE_OAUTH_TOKEN env var
-      4. OAuth token from macOS Keychain (claude setup-token)
+      4. OAuth token from macOS Keychain (requires *allow_keychain*)
     """
     # Explicit key or env var
     key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
@@ -80,10 +83,11 @@ def resolve_anthropic_auth(api_key: str = "") -> tuple[str, str]:
     if oauth_env:
         return oauth_env, "oauth"
 
-    # macOS Keychain
-    oauth = _read_oauth_from_keychain()
-    if oauth:
-        return oauth, "oauth"
+    # macOS Keychain — only if the user has accepted the OAuth consent
+    if allow_keychain:
+        oauth = _read_oauth_from_keychain()
+        if oauth:
+            return oauth, "oauth"
 
     return "", ""
 
@@ -129,7 +133,9 @@ class AnthropicProvider(LLMProvider):
             kwargs["timeout"] = 120.0  # 2min vs SDK default 10min
             if self._auth_type == "oauth":
                 kwargs["auth_token"] = self.api_key
-                kwargs["default_headers"] = {"anthropic-beta": "oauth-2025-04-20"}
+                kwargs["default_headers"] = {
+                    "anthropic-beta": "oauth-2025-04-20,claude-code-20250219",
+                }
                 self._client = anthropic.Anthropic(**kwargs)
             else:
                 kwargs["api_key"] = self.api_key
@@ -380,13 +386,24 @@ class AnthropicProvider(LLMProvider):
 
         # System prompt with cache_control for prompt caching
         if system:
-            kwargs["system"] = [
+            system_blocks: list[dict[str, Any]] = []
+            # OAuth billing attribution — required by Anthropic for
+            # Claude Code subscription tokens.
+            if self._auth_type == "oauth":
+                system_blocks.append(
+                    {
+                        "type": "text",
+                        "text": ("x-anthropic-billing-header: cc_version=2.1.77; cc_entrypoint=cli; cch=00000;"),
+                    }
+                )
+            system_blocks.append(
                 {
                     "type": "text",
                     "text": system,
                     "cache_control": {"type": "ephemeral"},
                 }
-            ]
+            )
+            kwargs["system"] = system_blocks
 
         if tools:
             formatted_tools = self._format_tools(tools)

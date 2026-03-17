@@ -685,6 +685,21 @@ class SettingsDialog(QDialog):
     # --- Accept ---
 
     def _on_accept(self) -> None:
+        api_key = self._api_key_edit.text().strip()
+
+        # If the user manually entered an OAuth token, show the consent
+        # warning before saving — same dialog as the keychain autoload.
+        if api_key.startswith("sk-ant-oat") and not self._config.oauth_consent_accepted:
+            from .oauth_consent import show_oauth_consent
+
+            choice = show_oauth_consent(parent=self)
+            if choice == "accept":
+                self._config.oauth_consent_accepted = True
+            else:
+                # User declined — clear the OAuth token, don't save it
+                self._api_key_edit.clear()
+                return
+
         self._config.provider.name = self._provider_combo.currentText()
         self._config.provider.model = self._get_selected_model_id()
         # ONLY save what the user explicitly typed — never save auto-resolved OAuth tokens

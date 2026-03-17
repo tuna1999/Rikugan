@@ -253,6 +253,8 @@ class RikuganPanelCore(QWidget):
         self._mutation_panel: MutationLogPanel | None = None
         self._skills_refresh_timer: QTimer | None = None
 
+        self._check_oauth_consent()
+
         def _warm_oauth() -> None:
             try:
                 resolve_auth_cached()
@@ -261,6 +263,38 @@ class RikuganPanelCore(QWidget):
 
         threading.Thread(target=_warm_oauth, daemon=True).start()
         self._build_ui()
+
+    def _check_oauth_consent(self) -> None:
+        """Show the OAuth consent dialog if a keychain token exists but consent
+        was never given.  Sets ``auth_cache.set_keychain_consent`` so the
+        warm-up thread knows whether keychain autoload is allowed.
+        """
+        from ..providers.auth_cache import has_keychain_token, set_keychain_consent
+
+        # Already consented — enable keychain
+        if self._config.oauth_consent_accepted:
+            set_keychain_consent(True)
+            return
+
+        # Explicit API key configured — no need to prompt
+        if self._config.provider.api_key:
+            return
+
+        # No keychain token — nothing to prompt about
+        if not has_keychain_token():
+            return
+
+        # Show consent dialog (blocks until user chooses)
+        from .oauth_consent import show_oauth_consent
+
+        choice = show_oauth_consent(parent=None)
+        if choice == "accept":
+            self._config.oauth_consent_accepted = True
+            self._config.save()
+            set_keychain_consent(True)
+        else:
+            # "api_key" or "cancel" — don't autoload from keychain
+            set_keychain_consent(False)
 
     def _ensure_skills_refresh_timer(self) -> None:
         """Refresh skill autocomplete once background discovery completes."""

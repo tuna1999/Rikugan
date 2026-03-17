@@ -70,6 +70,9 @@ class RikuganConfig:
     # Context management
     preserve_context: bool = False  # disable tool result truncation + context compaction
 
+    # OAuth consent — user must accept risk before keychain autoload
+    oauth_consent_accepted: bool = False
+
     # Bulk renamer defaults
     bulk_renamer_batch_size: int = 10
     bulk_renamer_max_concurrent: int = 3
@@ -164,6 +167,7 @@ class RikuganConfig:
             "a2a_agents",
             "bulk_renamer_batch_size",
             "bulk_renamer_max_concurrent",
+            "oauth_consent_accepted",
         ):
             if k in data:
                 setattr(self, k, data[k])
