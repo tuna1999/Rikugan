@@ -882,6 +882,7 @@ class RikuganPanelCore(QWidget):
                 self._config,
                 registry=self._ctrl.provider_registry,
                 tool_registry=self._ctrl.tool_registry,
+                is_running_callback=lambda: self._ctrl.is_agent_running,
             )
             result = dlg.exec_()
             if result:

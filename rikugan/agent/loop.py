@@ -806,8 +806,11 @@ class AgentLoop:
 
         # Fast path: use running token counter to skip expensive O(n)
         # estimation when we're clearly below the compaction threshold.
+        # Use dynamic context_window from config (not cached _context_manager.max_tokens)
+        # to correctly handle provider switches.
         fast_estimate = self.session.token_estimate
-        if fast_estimate > 0 and fast_estimate < int(self._context_manager.max_tokens * 0.5):
+        ctx_window = self.config.provider.context_window
+        if fast_estimate > 0 and fast_estimate < int(ctx_window * 0.5):
             # Well below threshold — skip full estimation for compaction
             pass
         else:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from ..core.config import RikuganConfig
 from ..core.logging import log_debug, log_error
@@ -182,6 +182,7 @@ class SettingsDialog(QDialog):
         config: RikuganConfig,
         registry: ProviderRegistry | None = None,
         tool_registry: Any | None = None,
+        is_running_callback: Callable[[], bool] | None = None,
         parent: QWidget = None,
     ):
         # Use None parent to avoid lifecycle coupling with IDA PluginForm widgets
@@ -197,6 +198,13 @@ class SettingsDialog(QDialog):
         self._model_restore_hint: str = self._config.provider.model.strip()
         self._shown = False
         self._closed = False
+        # Deferred provider change — defer SDK imports until after modal closes
+        # to avoid Shiboken UAF crash when C-extension packages (httpx, ssl, h2)
+        # are imported during modal dialog lifecycle.
+        self._provider_change_pending: str | None = None
+        # Callback to check if agent is running — used to warn user that
+        # provider change takes effect on next session, not current one.
+        self._is_running_callback: Callable[[], bool] | None = is_running_callback
         self.encryption_password: str = ""
         self.setWindowTitle("Rikugan Settings")
         screen = QApplication.primaryScreen()
@@ -472,6 +480,10 @@ class SettingsDialog(QDialog):
         except RuntimeError as e:
             log_debug(f"SettingsDialog.done timer cleanup: {e}")
         self._fetcher.shutdown()
+        # Schedule deferred provider change to run AFTER modal closes.
+        # This moves ensure_ready() (and its C-extension imports) outside
+        # the modal event loop, avoiding Shiboken UAF crashes.
+        QTimer.singleShot(0, lambda: self._apply_pending_provider_change(result))
         super().done(result)
 
     # --- Fetcher polling (main thread only, no cross-thread signals) ---
@@ -537,6 +549,40 @@ class SettingsDialog(QDialog):
         else:
             self._api_key_edit.setPlaceholderText("API key")
 
+        # DEFER: Do NOT call _update_auth_status() or _fetch_models() here.
+        # Calling ensure_ready() (which imports httpx/ssl/h2 C extensions) inside
+        # a modal dialog causes Shiboken UAF crashes when the dialog closes.
+        # Store pending change and apply it after modal closes via done().
+        self._provider_change_pending = provider
+
+        # Warn user if agent is running that provider change takes effect on next session
+        if self._is_running_callback and self._is_running_callback():
+            self._provider_combo.setToolTip(
+                "Provider change will take effect on the next session.\n"
+                "Current chat session continues with the previous provider."
+            )
+        else:
+            self._provider_combo.setToolTip("")
+
+    def _apply_pending_provider_change(self, accepted: bool) -> None:
+        """Apply the pending provider change from within _on_provider_changed.
+
+        Called via QTimer.singleShot(0, ...) AFTER the modal dialog closes,
+        ensuring ensure_ready() imports happen outside the modal event loop.
+
+        Args:
+            accepted: True if dialog was accepted (OK clicked), False if rejected (Cancel).
+                     Only applies pending change if accepted.
+        """
+        if self._provider_change_pending is None:
+            return
+        provider = self._provider_change_pending
+        self._provider_change_pending = None
+        # Only apply if dialog was accepted (not cancelled)
+        if not accepted:
+            return
+        # _update_auth_status and _fetch_models are now safe to call
+        # because we're outside the modal dialog context.
         self._update_auth_status()
         self._fetch_models()
 

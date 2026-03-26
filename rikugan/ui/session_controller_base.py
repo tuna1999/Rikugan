@@ -421,6 +421,11 @@ class SessionControllerBase:
     def update_settings(self) -> None:
         # Re-register custom providers in case user added/removed one
         self._provider_registry.register_custom_providers(list(self.config.custom_providers.keys()))
+        # Clear provider instances cache to force fresh creation with new credentials.
+        # Without this, get_or_create() may return a cached instance from
+        # _ModelFetcher in Settings dialog with stale internal state (e.g. cached
+        # HTTP client), causing crashes when streaming starts on the next message.
+        self._provider_registry._instances.clear()
         for session in self._sessions.values():
             session.provider_name = self.config.provider.name
             session.model_name = self.config.provider.model
