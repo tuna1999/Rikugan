@@ -60,10 +60,11 @@ class _ModelFetcher:
     def __init__(self, registry: ProviderRegistry):
         self._registry = registry
         self._queue: queue.Queue = queue.Queue()
-        self._alive = True
+        self._alive = threading.Event()
+        self._alive.set()
 
     def shutdown(self) -> None:
-        self._alive = False
+        self._alive.clear()
         # Drain the queue to unblock any pending puts
         while not self._queue.empty():
             try:
@@ -83,17 +84,17 @@ class _ModelFetcher:
             )
             provider.ensure_ready()
         except Exception as e:
-            if self._alive:
+            if self._alive.is_set():
                 self._queue.put(("error", provider_name, str(e)))
             return
 
         def _run():
             try:
                 models = provider.list_models()
-                if self._alive:
+                if self._alive.is_set():
                     self._queue.put(("models", provider_name, models))
             except Exception as e:
-                if self._alive:
+                if self._alive.is_set():
                     self._queue.put(("error", provider_name, str(e)))
 
         threading.Thread(target=_run, daemon=True).start()

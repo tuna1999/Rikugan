@@ -28,6 +28,11 @@ from ..core.types import (
 )
 from .base import LLMProvider
 
+# Anthropic OAuth billing attribution header - required for Claude Code subscription tokens.
+# This header is sent to Anthropic for billing attribution when using OAuth authentication.
+# The values are mandated by Anthropic's OAuth implementation requirements.
+_ANTHROPIC_OAUTH_BILLING_HEADER = "cc_version=2.1.77; cc_entrypoint=cli; cch=00000;"
+
 
 def _read_oauth_from_keychain() -> str | None:
     """Read the Claude OAuth access token from macOS Keychain.
@@ -322,11 +327,17 @@ class AnthropicProvider(LLMProvider):
             elif block.type == "text":
                 content_text += block.text
             elif block.type == "tool_use":
+                args = block.input if isinstance(block.input, dict) else {}
+                if not isinstance(block.input, dict):
+                    try:
+                        args = json.loads(block.input)
+                    except (json.JSONDecodeError, TypeError):
+                        log_debug(f"Failed to parse tool_use input: {block.input!r}")
                 tool_calls.append(
                     ToolCall(
                         id=block.id,
                         name=block.name,
-                        arguments=block.input if isinstance(block.input, dict) else json.loads(block.input),
+                        arguments=args,
                     )
                 )
 
@@ -399,7 +410,7 @@ class AnthropicProvider(LLMProvider):
                 system_blocks.append(
                     {
                         "type": "text",
-                        "text": ("x-anthropic-billing-header: cc_version=2.1.77; cc_entrypoint=cli; cch=00000;"),
+                        "text": f"x-anthropic-billing-header: {_ANTHROPIC_OAUTH_BILLING_HEADER}",
                     }
                 )
             system_blocks.append(

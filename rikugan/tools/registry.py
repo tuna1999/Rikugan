@@ -116,7 +116,8 @@ class ToolRegistry:
     def _available(self, defn: ToolDefinition) -> bool:
         """Check if all requirements of a tool definition are met."""
         for req in defn.requires:
-            if not self._capabilities.get(req, True):
+            # Unknown capabilities default to False (not available) for safety
+            if not self._capabilities.get(req, False):
                 return False
         return True
 

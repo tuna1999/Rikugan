@@ -353,8 +353,10 @@ def _patch_x86_branch(orig: bytes, action: str, length: int) -> bytes | None:
     """Patch x86/x64 conditional branch bytes."""
     opcode = orig[0]
 
-    # Short conditional jumps: 0x70-0x7F (Jcc rel8)
+    # Short conditional jumps: 0x70-0x7F (Jcc rel8) - 2 bytes minimum
     if 0x70 <= opcode <= 0x7F:
+        if length < 2:
+            return None
         if action == "force_true":
             # Replace with JMP rel8 (0xEB)
             return bytes([0xEB]) + orig[1:]
@@ -367,16 +369,16 @@ def _patch_x86_branch(orig: bytes, action: str, length: int) -> bytes | None:
         elif action == "unconditional":
             return bytes([0xEB]) + orig[1:]
 
-    # Near conditional jumps: 0x0F 0x80-0x8F (Jcc rel32)
-    if opcode == 0x0F and length >= 2 and 0x80 <= orig[1] <= 0x8F:
+    # Near conditional jumps: 0x0F 0x80-0x8F (Jcc rel32) - 6 bytes minimum
+    if opcode == 0x0F and length >= 6 and 0x80 <= orig[1] <= 0x8F:
         if action == "force_true":
-            # Replace with JMP rel32 (0xE9) + adjust offset
-            # 0x0F 0x8x rel32 -> 0xE9 rel32 + NOP
+            # Replace with JMP rel32 (0xE9) + 1-byte NOP to keep instruction size
             return bytes([0xE9]) + orig[2:6] + b"\x90"
         elif action == "force_false":
             return b"\x90" * length
         elif action == "invert":
-            return bytes([0x0F, orig[1] ^ 0x01]) + orig[2:]
+            # 6 bytes: 0x0F 0x8x rel32 -> invert to 0x0F 0x9x rel32
+            return bytes([0x0F, orig[1] ^ 0x01]) + orig[2:6]
         elif action == "unconditional":
             return bytes([0xE9]) + orig[2:6] + b"\x90"
 

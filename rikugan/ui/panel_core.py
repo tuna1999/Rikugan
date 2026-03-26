@@ -810,7 +810,14 @@ class RikuganPanelCore(QWidget):
         """Called when the user opens a different file."""
         if self._is_shutdown:
             return
-        normalized = os.path.normcase(os.path.realpath(os.path.abspath(new_path))) if new_path else ""
+        if new_path:
+            try:
+                normalized = os.path.normcase(os.path.realpath(os.path.abspath(new_path)))
+            except (FileNotFoundError, OSError):
+                # File may not exist yet (e.g., database closed without opening a new one)
+                normalized = os.path.normcase(os.path.abspath(new_path))
+        else:
+            normalized = ""
         if normalized == self._ctrl._idb_path:
             return
         self._ctrl.reset_for_new_file(normalized)

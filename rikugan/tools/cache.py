@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from typing import Any
@@ -44,7 +45,7 @@ class ToolResultCache:
                 sorted(
                     (
                         k,
-                        v if isinstance(v, (str, int, float, bool, type(None))) else str(v),
+                        v if isinstance(v, (str, int, float, bool, type(None))) else json.dumps(v, sort_keys=True),
                     )
                     for k, v in arguments.items()
                 )

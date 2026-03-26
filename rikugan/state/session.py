@@ -144,13 +144,13 @@ class SessionState:
         """
         with self._lock:
             snapshot = list(self.messages)
-        sanitized = self._sanitize(snapshot)
-        sanitized = self._sanitize_assistant_output(sanitized)
-        if not preserve_context:
-            sanitized = self._truncate_results(sanitized)
-            if context_window > 0:
-                sanitized = self._trim_to_budget(sanitized, context_window)
-        return sanitized
+            sanitized = self._sanitize(snapshot)
+            sanitized = self._sanitize_assistant_output(sanitized)
+            if not preserve_context:
+                sanitized = self._truncate_results(sanitized)
+                if context_window > 0:
+                    sanitized = self._trim_to_budget(sanitized, context_window)
+            return sanitized
 
     # --- Internal helpers ---
 

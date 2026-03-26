@@ -764,7 +764,9 @@ class AgentLoop:
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
                             break
-                        time.sleep(min(0.5, remaining))
+                        # Use Event.wait() instead of time.sleep() so that cancel()
+                        # is detected immediately rather than after the sleep completes.
+                        self._cancelled.wait(timeout=min(0.5, remaining))
                 continue
 
         # All retries exhausted
@@ -847,21 +849,31 @@ class AgentLoop:
 
     def _accumulate_chunk_usage(self, last: TokenUsage | None, chunk: TokenUsage) -> TokenUsage:
         """Merge a streaming chunk's usage into the accumulated total."""
+        # Handle None values from API responses by defaulting to 0
+        chunk_prompt = chunk.prompt_tokens or 0
+        chunk_completion = chunk.completion_tokens or 0
+        chunk_cache_read = chunk.cache_read_tokens or 0
+        chunk_cache_create = chunk.cache_creation_tokens or 0
+
         if last is None:
             return TokenUsage(
-                prompt_tokens=chunk.prompt_tokens,
-                completion_tokens=chunk.completion_tokens,
-                total_tokens=(chunk.total_tokens or chunk.prompt_tokens + chunk.completion_tokens),
-                cache_read_tokens=chunk.cache_read_tokens,
-                cache_creation_tokens=chunk.cache_creation_tokens,
+                prompt_tokens=chunk_prompt,
+                completion_tokens=chunk_completion,
+                total_tokens=chunk.total_tokens or (chunk_prompt + chunk_completion),
+                cache_read_tokens=chunk_cache_read,
+                cache_creation_tokens=chunk_cache_create,
             )
         # Accumulate: message_start sends prompt_tokens, message_delta sends completion_tokens.
+        last_prompt = last.prompt_tokens or 0
+        last_completion = last.completion_tokens or 0
+        last_cache_read = last.cache_read_tokens or 0
+        last_cache_create = last.cache_creation_tokens or 0
         return TokenUsage(
-            prompt_tokens=last.prompt_tokens + chunk.prompt_tokens,
-            completion_tokens=last.completion_tokens + chunk.completion_tokens,
-            total_tokens=(last.prompt_tokens + chunk.prompt_tokens + last.completion_tokens + chunk.completion_tokens),
-            cache_read_tokens=last.cache_read_tokens + chunk.cache_read_tokens,
-            cache_creation_tokens=last.cache_creation_tokens + chunk.cache_creation_tokens,
+            prompt_tokens=last_prompt + chunk_prompt,
+            completion_tokens=last_completion + chunk_completion,
+            total_tokens=last_prompt + chunk_prompt + last_completion + chunk_completion,
+            cache_read_tokens=last_cache_read + chunk_cache_read,
+            cache_creation_tokens=last_cache_create + chunk_cache_create,
         )
 
     def _finalize_stream_usage(
@@ -977,14 +989,17 @@ class AgentLoop:
     def _estimate_prompt_tokens(provider_messages: list[Message], system_prompt: str) -> int:
         """Estimate prompt token usage from message content lengths.
 
-        Uses a lightweight character sum instead of JSON serialization.
+        Uses json.dumps for tool call arguments to capture JSON structure overhead
+        (field names, quotes, brackets) rather than just the raw string content.
         """
         char_count = len(system_prompt)
         for m in provider_messages:
             char_count += len(m.content) if m.content else 0
             if m.tool_calls:
                 for tc in m.tool_calls:
-                    char_count += len(str(tc.arguments)) if tc.arguments else 0
+                    if tc.arguments:
+                        # json.dumps includes field names, quotes, and structural characters
+                        char_count += len(json.dumps(tc.arguments))
         return ContextWindowManager.estimate_tokens_from_chars(char_count)
 
     @staticmethod

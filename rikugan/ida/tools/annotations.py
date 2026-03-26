@@ -60,7 +60,9 @@ def rename_variable(
     lvars = cfunc.get_lvars()
     for lv in lvars:
         if lv.name == old_name:
-            ok = ida_hexrays.rename_lvar(cfunc.entry_ea, lv.name, new_name)
+            # ida_hexrays.rename_lvar takes (cfunc, lvar_locator, newname) or (lvar, newname)
+            # We have lv (lvar_t) and cfunc, use the lv directly
+            ok = ida_hexrays.rename_lvar(lv, new_name)
             if ok:
                 return f"Renamed variable: {old_name} \u2192 {new_name}"
             return f"Failed to rename variable {old_name}"

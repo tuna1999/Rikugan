@@ -167,14 +167,16 @@ def navigate_to(address: int) -> bool:
     if is_binary_ninja():
         with _ctx_lock:
             cb = _bn_navigate_cb
-        if cb is not None:
-            try:
-                ok = bool(cb(ea))
-                if ok:
-                    set_current_address(ea)
-                return ok
-            except Exception as e:
-                sys.stderr.write(f"[Rikugan] navigate_to_address cb failed at 0x{ea:x}: {e}\n")
+            if cb is not None:
+                try:
+                    ok = bool(cb(ea))
+                    if ok:
+                        # Also update address under lock to keep state consistent
+                        _bn_address = ea
+                    return ok
+                except Exception as e:
+                    sys.stderr.write(f"[Rikugan] navigate_to_address cb failed at 0x{ea:x}: {e}\n")
+                    return False
         return False
 
     return False

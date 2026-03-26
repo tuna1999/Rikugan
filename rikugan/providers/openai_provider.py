@@ -229,6 +229,9 @@ class OpenAIProvider(LLMProvider):
     ) -> Generator[StreamChunk, None, None]:
         """Yield StreamChunks from the OpenAI streaming API."""
         kwargs["stream"] = True
+        # stream_options requires OpenAI API version 2024-11-01 or later.
+        # Older API versions will return BadRequestError, so we set it and
+        # catch the error to fall back gracefully.
         kwargs["stream_options"] = {"include_usage": True}
 
         try:

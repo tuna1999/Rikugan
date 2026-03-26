@@ -42,10 +42,12 @@ class _SkillPopup(QFrame):
 
     def set_items(self, slugs: list[str]) -> None:
         """Replace popup contents with filtered slugs."""
-        # Clear old labels
+        # Clear old labels - deleteLater() is required to free Qt resources,
+        # setParent(None) alone does not destroy the QLabel.
         for lbl in self._labels:
             self._layout.removeWidget(lbl)
             lbl.setParent(None)
+            lbl.deleteLater()
         self._labels.clear()
         self._slugs = list(slugs)
         self._selected_idx = 0
