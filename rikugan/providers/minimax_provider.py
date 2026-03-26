@@ -82,6 +82,22 @@ class MiniMaxProvider(AnthropicProvider):
     def _builtin_models() -> list[ModelInfo]:
         return [
             ModelInfo(
+                id="MiniMax-M2.7",
+                name="MiniMax M2.7",
+                provider="minimax",
+                context_window=204800,
+                max_output_tokens=8192,
+                supports_tools=True,
+            ),
+            ModelInfo(
+                id="MiniMax-M2.7-highspeed",
+                name="MiniMax M2.7 Highspeed",
+                provider="minimax",
+                context_window=204800,
+                max_output_tokens=8192,
+                supports_tools=True,
+            ),
+            ModelInfo(
                 id="MiniMax-M2.5",
                 name="MiniMax M2.5",
                 provider="minimax",
@@ -152,7 +168,9 @@ class MiniMaxProvider(AnthropicProvider):
         system: str,
     ) -> dict[str, Any]:
         """Build request kwargs, stripping cache_control (not supported by MiniMax)."""
-        kwargs = super()._build_request_kwargs(messages, tools, temperature, max_tokens, system)
+        kwargs = super()._build_request_kwargs(
+            messages, tools, temperature, max_tokens, system
+        )
 
         # System prompt: strip cache_control from blocks
         if isinstance(kwargs.get("system"), list):
