@@ -9,14 +9,13 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtWidgets import QStackedWidget
-
 from ..agent.mutation import MutationRecord
 from ..agent.turn import TurnEvent, TurnEventType
 from ..core.config import RikuganConfig
-from ..core.logging import log_debug, log_error, log_info
+from ..core.logging import log_debug, log_error, log_info, log_warning
 from ..core.types import Role
 from ..providers.auth_cache import resolve_auth_cached
+from ..providers.registry import ProviderRegistry
 from .chat_view import ChatView
 from .context_bar import ContextBar
 from .input_area import InputArea
@@ -27,10 +26,12 @@ from .qt_compat import (
     QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     Qt,
     QTabBar,
     QTabWidget,
@@ -38,10 +39,15 @@ from .qt_compat import (
     QToolButton,
     QVBoxLayout,
     QWidget,
-    Signal,
+    qt_flags,
+    qt_run,
 )
-from .settings_dialog import SettingsDialog
-from .styles import DARK_THEME
+from .styles import (
+    build_small_button_stylesheet,
+    build_theme_stylesheet,
+    maybe_host_stylesheet,
+    use_native_host_theme,
+)
 from .tool_widgets import _SharedSpinnerTimer
 from .tools_panel import ToolsPanel
 
@@ -167,12 +173,11 @@ def _export_format_subagent_log(messages) -> str:
 class _AddButtonTabBar(QTabBar):
     """Tab bar with an integrated '+' button positioned after the last tab."""
 
-    add_tab_requested = Signal()
-    export_tab_requested = Signal(int)
-    fork_tab_requested = Signal(int)
-
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._add_tab_callback: Callable[[], None] | None = None
+        self._export_tab_callback: Callable[[int], None] | None = None
+        self._fork_tab_callback: Callable[[int], None] | None = None
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
         self._add_btn = QToolButton(self)
@@ -180,11 +185,26 @@ class _AddButtonTabBar(QTabBar):
         self._add_btn.setAutoRaise(True)
         self._add_btn.setFixedSize(20, 20)
         self._add_btn.setStyleSheet(
-            "QToolButton { color: #d4d4d4; font-size: 14px; font-weight: bold; "
-            "border: none; background: transparent; }"
-            "QToolButton:hover { background: #3c3c3c; border-radius: 3px; }"
+            maybe_host_stylesheet(
+                "QToolButton { color: #d4d4d4; font-size: 14px; font-weight: bold; "
+                "border: none; background: transparent; }"
+                "QToolButton:hover { background: #3c3c3c; border-radius: 3px; }"
+            )
         )
-        self._add_btn.clicked.connect(self.add_tab_requested)
+        self._add_btn.clicked.connect(self._handle_add_tab)
+
+    def set_add_tab_callback(self, callback: Callable[[], None] | None) -> None:
+        self._add_tab_callback = callback
+
+    def set_export_tab_callback(self, callback: Callable[[int], None] | None) -> None:
+        self._export_tab_callback = callback
+
+    def set_fork_tab_callback(self, callback: Callable[[int], None] | None) -> None:
+        self._fork_tab_callback = callback
+
+    def _handle_add_tab(self) -> None:
+        if self._add_tab_callback is not None:
+            self._add_tab_callback()
 
     def _show_context_menu(self, pos):
         index = self.tabAt(pos)
@@ -193,11 +213,11 @@ class _AddButtonTabBar(QTabBar):
         menu = QMenu(self)
         export_action = menu.addAction("Export Chat")
         fork_action = menu.addAction("Fork Session")
-        action = menu.exec_(self.mapToGlobal(pos))
-        if action == export_action:
-            self.export_tab_requested.emit(index)
-        elif action == fork_action:
-            self.fork_tab_requested.emit(index)
+        action = qt_run(menu, self.mapToGlobal(pos))
+        if action == export_action and self._export_tab_callback is not None:
+            self._export_tab_callback(index)
+        elif action == fork_action and self._fork_tab_callback is not None:
+            self._fork_tab_callback(index)
 
     def tabInserted(self, index):
         super().tabInserted(index)
@@ -233,9 +253,13 @@ class RikuganPanelCore(QWidget):
     ):
         super().__init__(parent)
         self._config = RikuganConfig.load_or_create()
+        self._use_native_host_theme = use_native_host_theme()
+        self._dependency_warnings = ProviderRegistry().dependency_warnings()
         log_debug(
             f"Config loaded: provider={self._config.provider.name} model={self._config.provider.model}",
         )
+        for warning in self._dependency_warnings:
+            log_warning(f"Dependency warning: {warning}")
         if self._config.has_encrypted_keys():
             self._prompt_decryption_password()
         self._ctrl = controller_factory(self._config)
@@ -251,6 +275,7 @@ class RikuganPanelCore(QWidget):
 
         # Tab-to-ChatView mapping
         self._chat_views: dict[str, ChatView] = {}
+        self._pending_restore_messages: dict[str, list] = {}
         self._context_bar: ContextBar | None = None
         self._mutation_panel: MutationLogPanel | None = None
         self._skills_refresh_timer: QTimer | None = None
@@ -281,13 +306,16 @@ class RikuganPanelCore(QWidget):
             pw_edit.setPlaceholderText("Password")
             layout.addWidget(pw_edit)
             buttons = QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+                qt_flags(
+                    QDialogButtonBox.StandardButton.Ok,
+                    QDialogButtonBox.StandardButton.Cancel,
+                ),
             )
             buttons.accepted.connect(dlg.accept)
             buttons.rejected.connect(dlg.reject)
             layout.addWidget(buttons)
 
-            if dlg.exec_() != QDialog.DialogCode.Accepted:
+            if qt_run(dlg) != QDialog.DialogCode.Accepted:
                 break  # user cancelled — keys stay empty
             if self._config.decrypt_stored_keys(pw_edit.text()):
                 log_debug("API keys decrypted successfully")
@@ -349,18 +377,18 @@ class RikuganPanelCore(QWidget):
     )
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(DARK_THEME)
         self.setObjectName("rikugan_panel")
+        self.setStyleSheet(build_theme_stylesheet(self))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Top-level mode switcher: Chat | Tools (like Binja's Tags | Tag Types)
-        # Hidden for IDA which uses a separate dockable form for tools.
+        # Top-level mode switcher: Chat | Tools.
+        # Hosts may optionally provide tools in a separate form.
         self._mode_bar = QTabBar()
         self._mode_bar.setObjectName("mode_bar")
-        self._mode_bar.setStyleSheet(self._MODE_BAR_STYLE)
+        self._mode_bar.setStyleSheet("" if self._use_native_host_theme else self._MODE_BAR_STYLE)
         self._mode_bar.setExpanding(False)
         self._mode_bar.setDrawBase(False)
         self._mode_bar.addTab("Chat")
@@ -373,6 +401,22 @@ class RikuganPanelCore(QWidget):
         # Stacked content: page 0 = chat, page 1 = tools
         self._mode_stack = QStackedWidget()
         layout.addWidget(self._mode_stack, 1)
+
+        self._dependency_banner = QLabel()
+        self._dependency_banner.setObjectName("dependency_banner")
+        self._dependency_banner.setWordWrap(True)
+        self._dependency_banner.setStyleSheet(
+            maybe_host_stylesheet(
+                "QLabel#dependency_banner {"
+                "background: #4b3900; color: #f5d98b; border-top: 1px solid #6b5000; "
+                "border-bottom: 1px solid #6b5000; padding: 6px 8px; font-size: 11px; }"
+            )
+        )
+        if self._dependency_warnings:
+            self._dependency_banner.setText("Warnings: " + " ".join(self._dependency_warnings))
+            layout.insertWidget(1, self._dependency_banner)
+        else:
+            self._dependency_banner.hide()
 
         # --- Page 0: Chat ---
         chat_page = QWidget()
@@ -389,9 +433,8 @@ class RikuganPanelCore(QWidget):
         self._tools_panel: ToolsPanel | None = ToolsPanel()
         self._tools_panel.hide_header()
         if self._tools_form_factory is not None:
-            # IDA: ToolsPanel will live in a separate dockable form, not
-            # in the mode_stack.  Add a lightweight placeholder so the
-            # stack still has a page 1.
+            # Separate tools-form hosts keep a lightweight placeholder in the
+            # stack so page indices stay stable while tools live elsewhere.
             _tools_placeholder = QWidget()
             self._mode_stack.addWidget(_tools_placeholder)
         else:
@@ -423,19 +466,21 @@ class RikuganPanelCore(QWidget):
         self._tab_widget.setTabsClosable(True)
         self._tab_widget.tabCloseRequested.connect(self._on_close_tab)
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
-        self._tab_bar.add_tab_requested.connect(self._on_new_tab)
-        self._tab_bar.export_tab_requested.connect(self._on_export_tab)
-        self._tab_bar.fork_tab_requested.connect(self._on_fork_tab)
+        self._tab_bar.set_add_tab_callback(self._on_new_tab)
+        self._tab_bar.set_export_tab_callback(self._on_export_tab)
+        self._tab_bar.set_fork_tab_callback(self._on_fork_tab)
         self._tab_widget.setStyleSheet(
-            "QTabWidget::pane { border: none; }"
-            "QTabBar { background: #1e1e1e; border: none; }"
-            "QTabBar::tab { background: #252526; color: #cccccc; padding: 2px 8px; "
-            "border: none; border-right: 1px solid #3c3c3c; "
-            "font-size: 11px; max-width: 140px; }"
-            "QTabBar::tab:selected { background: #1e1e1e; color: #ffffff; }"
-            "QTabBar::tab:hover { background: #2d2d2d; }"
-            "QTabBar::close-button { image: none; border: none; padding: 1px; }"
-            "QTabBar::close-button:hover { background: #c42b1c; border-radius: 2px; }"
+            maybe_host_stylesheet(
+                "QTabWidget::pane { border: none; }"
+                "QTabBar { background: #1e1e1e; border: none; }"
+                "QTabBar::tab { background: #252526; color: #cccccc; padding: 2px 8px; "
+                "border: none; border-right: 1px solid #3c3c3c; "
+                "font-size: 11px; max-width: 140px; }"
+                "QTabBar::tab:selected { background: #1e1e1e; color: #ffffff; }"
+                "QTabBar::tab:hover { background: #2d2d2d; }"
+                "QTabBar::close-button { image: none; border: none; padding: 1px; }"
+                "QTabBar::close-button:hover { background: #c42b1c; border-radius: 2px; }"
+            )
         )
         self._tab_bar.setExpanding(False)
         self._tab_bar.setVisible(False)  # hidden until 2+ tabs
@@ -444,7 +489,7 @@ class RikuganPanelCore(QWidget):
         """Create the horizontal splitter (chat | mutation log) and add to layout."""
         self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._main_splitter.setHandleWidth(1)
-        self._main_splitter.setStyleSheet("QSplitter::handle { background: #3c3c3c; }")
+        self._main_splitter.setStyleSheet(maybe_host_stylesheet("QSplitter::handle { background: #3c3c3c; }"))
         self._main_splitter.addWidget(self._tab_widget)
 
         self._mutation_panel = MutationLogPanel()
@@ -463,7 +508,7 @@ class RikuganPanelCore(QWidget):
         input_layout = QHBoxLayout(self._input_container)
         input_layout.setContentsMargins(8, 4, 8, 4)
 
-        self._input_area = InputArea()
+        self._input_area = InputArea(self._input_container)
         self._input_area.set_submit_callback(self._on_submit)
         self._input_area.set_cancel_callback(self._on_cancel)
         self._input_area.set_skill_slugs(self._ctrl.skill_slugs)
@@ -480,34 +525,34 @@ class RikuganPanelCore(QWidget):
         self._send_btn = QPushButton("Send")
         self._send_btn.setObjectName("send_button")
         self._send_btn.setFixedWidth(64)
-        self._send_btn.setStyleSheet(_SMALL_BTN_STYLE)
+        self._send_btn.setStyleSheet(maybe_host_stylesheet(_SMALL_BTN_STYLE))
         self._send_btn.clicked.connect(self._on_send_clicked)
         btn_layout.addWidget(self._send_btn)
         self._cancel_btn = QPushButton("Stop")
         self._cancel_btn.setObjectName("cancel_button")
         self._cancel_btn.setFixedWidth(64)
-        self._cancel_btn.setStyleSheet(_CANCEL_BTN_STYLE)
+        self._cancel_btn.setStyleSheet(maybe_host_stylesheet(_CANCEL_BTN_STYLE))
         self._cancel_btn.setVisible(False)
         self._cancel_btn.clicked.connect(self._on_cancel)
         btn_layout.addWidget(self._cancel_btn)
         self._new_btn = QPushButton("New")
         self._new_btn.setFixedWidth(64)
-        self._new_btn.setStyleSheet(_SMALL_BTN_STYLE)
+        self._new_btn.setStyleSheet(maybe_host_stylesheet(_SMALL_BTN_STYLE))
         self._new_btn.clicked.connect(self._on_new_tab)
         btn_layout.addWidget(self._new_btn)
         self._export_btn = QPushButton("Export")
         self._export_btn.setFixedWidth(64)
-        self._export_btn.setStyleSheet(_SMALL_BTN_STYLE)
+        self._export_btn.setStyleSheet(maybe_host_stylesheet(_SMALL_BTN_STYLE))
         self._export_btn.clicked.connect(self._on_export_current)
         btn_layout.addWidget(self._export_btn)
         self._settings_btn = QPushButton("Settings")
         self._settings_btn.setFixedWidth(64)
-        self._settings_btn.setStyleSheet(_SMALL_BTN_STYLE)
+        self._settings_btn.setStyleSheet(maybe_host_stylesheet(_SMALL_BTN_STYLE))
         self._settings_btn.clicked.connect(self._on_settings)
         btn_layout.addWidget(self._settings_btn)
         self._mutations_btn = QPushButton("Mutations")
         self._mutations_btn.setFixedWidth(64)
-        self._mutations_btn.setStyleSheet(_SMALL_BTN_STYLE)
+        self._mutations_btn.setStyleSheet(maybe_host_stylesheet(_SMALL_BTN_STYLE))
         self._mutations_btn.setCheckable(True)
         self._mutations_btn.clicked.connect(self._on_toggle_mutation_log)
         self._mutations_btn.setVisible(False)  # shown when first mutation is recorded
@@ -515,10 +560,21 @@ class RikuganPanelCore(QWidget):
 
         self._tools_btn = QPushButton("Tools")
         self._tools_btn.setFixedWidth(64)
-        self._tools_btn.setStyleSheet(_SMALL_BTN_STYLE)
+        self._tools_btn.setStyleSheet(maybe_host_stylesheet(_SMALL_BTN_STYLE))
         self._tools_btn.setCheckable(True)
         self._tools_btn.clicked.connect(self._on_toggle_tools)
         btn_layout.addWidget(self._tools_btn)
+
+        if self._use_native_host_theme:
+            default_btn_style = build_small_button_stylesheet(self)
+            danger_btn_style = build_small_button_stylesheet(self, danger=True)
+            self._send_btn.setStyleSheet(default_btn_style)
+            self._cancel_btn.setStyleSheet(danger_btn_style)
+            self._new_btn.setStyleSheet(default_btn_style)
+            self._export_btn.setStyleSheet(default_btn_style)
+            self._settings_btn.setStyleSheet(default_btn_style)
+            self._mutations_btn.setStyleSheet(default_btn_style)
+            self._tools_btn.setStyleSheet(default_btn_style)
 
         btn_layout.addStretch()
         return btn_layout
@@ -533,8 +589,8 @@ class RikuganPanelCore(QWidget):
         """Create a new ChatView and add it as a tab."""
         chat_view = ChatView()
         chat_view.setProperty("tab_id", tab_id)  # O(1) lookup in _tab_id_at_index
-        chat_view.tool_approval_submitted.connect(self._on_tool_approval)
-        chat_view.user_answer_submitted.connect(self._on_user_answer_submitted)
+        chat_view.set_tool_approval_callback(self._on_tool_approval)
+        chat_view.set_user_answer_callback(self._on_user_answer_submitted)
         self._chat_views[tab_id] = chat_view
         index = self._tab_widget.addTab(chat_view, label)
         self._tab_widget.setCurrentIndex(index)
@@ -619,19 +675,26 @@ class RikuganPanelCore(QWidget):
             dlg = QDialog(self)
             dlg.setWindowTitle("Export Options")
             dlg.setStyleSheet(
-                "QDialog { background: #1e1e1e; }"
-                "QLabel { color: #d4d4d4; font-size: 12px; }"
-                "QCheckBox { color: #d4d4d4; font-size: 12px; }"
+                maybe_host_stylesheet(
+                    "QDialog { background: #1e1e1e; }"
+                    "QLabel { color: #d4d4d4; font-size: 12px; }"
+                    "QCheckBox { color: #d4d4d4; font-size: 12px; }"
+                )
             )
             layout = QVBoxLayout(dlg)
             cb = QCheckBox(f"Include subagent logs ({len(session.subagent_logs)} subagent runs)")
             cb.setChecked(True)
             layout.addWidget(cb)
-            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons = QDialogButtonBox(
+                qt_flags(
+                    QDialogButtonBox.StandardButton.Ok,
+                    QDialogButtonBox.StandardButton.Cancel,
+                )
+            )
             buttons.accepted.connect(dlg.accept)
             buttons.rejected.connect(dlg.reject)
             layout.addWidget(buttons)
-            if not dlg.exec():
+            if not qt_run(dlg):
                 return
             include_subagents = cb.isChecked()
 
@@ -716,6 +779,7 @@ class RikuganPanelCore(QWidget):
         if tab_id is None:
             return
         self._ctrl.switch_tab(tab_id)
+        self._restore_messages_if_needed(tab_id)
         self._update_token_display()
 
     def _tab_id_at_index(self, index: int) -> str | None:
@@ -735,6 +799,15 @@ class RikuganPanelCore(QWidget):
     def _active_chat_view(self) -> ChatView | None:
         """Return the ChatView for the currently active tab."""
         return self._chat_views.get(self._ctrl.active_tab_id)
+
+    def _restore_messages_if_needed(self, tab_id: str) -> None:
+        """Replay deferred restored messages for a tab the first time it is shown."""
+        messages = self._pending_restore_messages.pop(tab_id, None)
+        if not messages:
+            return
+        chat_view = self._chat_views.get(tab_id)
+        if chat_view is not None:
+            chat_view.restore_from_messages(messages)
 
     def _update_token_display(self, token_count: int | None = None) -> None:
         """Update the context bar token display with context window percentage."""
@@ -830,6 +903,7 @@ class RikuganPanelCore(QWidget):
             if w:
                 w.deleteLater()
         self._chat_views.clear()
+        self._pending_restore_messages.clear()
         # Create default tab and try to restore saved sessions
         self._create_tab(self._ctrl.active_tab_id, "New Chat")
         self._try_restore_session()
@@ -878,13 +952,15 @@ class RikuganPanelCore(QWidget):
 
     def _on_settings(self) -> None:
         try:
+            from .settings_dialog import SettingsDialog
+
             dlg = SettingsDialog(
                 self._config,
                 registry=self._ctrl.provider_registry,
                 tool_registry=self._ctrl.tool_registry,
                 is_running_callback=lambda: self._ctrl.is_agent_running,
             )
-            result = dlg.exec_()
+            result = qt_run(dlg)
             if result:
                 self._config.save(password=dlg.encryption_password)
                 self._ctrl.update_settings()
@@ -903,11 +979,13 @@ class RikuganPanelCore(QWidget):
         dlg.setText("Start a new chat? Current conversation will be saved.")
         dlg.setInformativeText(f"Context usage: {context_pct}%")
         dlg.setStyleSheet(
-            "QMessageBox { background: #1e1e1e; color: #d4d4d4; }"
-            "QLabel { color: #d4d4d4; font-size: 12px; }"
-            "QPushButton { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; "
-            "border-radius: 4px; padding: 6px 16px; font-size: 11px; min-width: 80px; }"
-            "QPushButton:hover { background: #3c3c3c; }"
+            maybe_host_stylesheet(
+                "QMessageBox { background: #1e1e1e; color: #d4d4d4; }"
+                "QLabel { color: #d4d4d4; font-size: 12px; }"
+                "QPushButton { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; "
+                "border-radius: 4px; padding: 6px 16px; font-size: 11px; min-width: 80px; }"
+                "QPushButton:hover { background: #3c3c3c; }"
+            )
         )
         yes_btn = dlg.addButton("Yes", QMessageBox.ButtonRole.AcceptRole)
         clear_btn = dlg.addButton(
@@ -916,7 +994,7 @@ class RikuganPanelCore(QWidget):
         )
         no_btn = dlg.addButton("No", QMessageBox.ButtonRole.RejectRole)
         dlg.setDefaultButton(no_btn)
-        dlg.exec_()
+        qt_run(dlg)
         clicked = dlg.clickedButton()
         if clicked is clear_btn:
             return "clear"
@@ -1066,8 +1144,8 @@ class RikuganPanelCore(QWidget):
 
             for tab_id, session in restored:
                 label = self._ctrl.tab_label(tab_id)
-                cv = self._create_tab(tab_id, label)
-                cv.restore_from_messages(session.messages)
+                self._pending_restore_messages[tab_id] = session.messages
+                self._create_tab(tab_id, label)
 
             # Activate the last (most recent) tab
             if restored:
@@ -1078,6 +1156,7 @@ class RikuganPanelCore(QWidget):
                         if self._tab_widget.widget(i) is last_cv:
                             self._tab_widget.setCurrentIndex(i)
                             break
+                    self._restore_messages_if_needed(last_tab_id)
                 self._update_token_display()
         else:
             # No saved sessions — try legacy single-session restore
@@ -1360,7 +1439,7 @@ class RikuganPanelCore(QWidget):
         rename_jobs = [RenameJob(address=j["address"], current_name=j["current_name"]) for j in jobs]
         engine.enqueue(rename_jobs)
         self._renamer_engine = engine
-        engine.start(deep=(mode == "deep"))
+        engine.start_renaming(deep=(mode == "deep"))
 
     def _on_renamer_pause(self) -> None:
         engine = getattr(self, "_renamer_engine", None)
@@ -1373,7 +1452,7 @@ class RikuganPanelCore(QWidget):
     def _on_renamer_cancel(self) -> None:
         engine = getattr(self, "_renamer_engine", None)
         if engine is not None:
-            engine.cancel()
+            engine.cancel_renaming()
 
     def _on_renamer_undo(self) -> None:
         engine = getattr(self, "_renamer_engine", None)

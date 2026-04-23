@@ -19,10 +19,17 @@ install_ida_mocks()
 from rikugan.core.types import Message, Role
 
 
+def _reload_anthropic_provider_module() -> None:
+    """Force the real provider module to load, not leftover test stubs."""
+    sys.modules.pop("rikugan.providers.anthropic_provider", None)
+    sys.modules.pop("rikugan.core.types", None)
+
+
 class TestAnthropicStreaming(unittest.TestCase):
     """Test AnthropicProvider.chat_stream with mock Anthropic stream events."""
 
     def _make_provider(self):
+        _reload_anthropic_provider_module()
         from rikugan.providers.anthropic_provider import AnthropicProvider
         p = AnthropicProvider(api_key="test-key", model="claude-test")
         return p

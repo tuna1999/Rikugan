@@ -23,7 +23,9 @@ from .qt_compat import (
     QVBoxLayout,
     QWidget,
     Signal,
+    qt_flags,
 )
+from .styles import maybe_host_stylesheet
 
 _BTN_STYLE = (
     "QPushButton { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; "
@@ -31,6 +33,7 @@ _BTN_STYLE = (
     "QPushButton:hover { background: #3c3c3c; }"
     "QPushButton:disabled { color: #555; }"
 )
+_BTN_STYLE = maybe_host_stylesheet(_BTN_STYLE)
 
 _STOP_BTN_STYLE = (
     "QPushButton { background: #2d2d2d; color: #c42b1c; border: 1px solid #c42b1c; "
@@ -38,6 +41,7 @@ _STOP_BTN_STYLE = (
     "QPushButton:hover { background: #3c3c3c; }"
     "QPushButton:disabled { color: #555; border-color: #555; }"
 )
+_STOP_BTN_STYLE = maybe_host_stylesheet(_STOP_BTN_STYLE)
 
 _START_BTN_STYLE = (
     "QPushButton { background: #2d2d2d; color: #d4d4d4; border: 1px solid #d4d4d4; "
@@ -45,6 +49,7 @@ _START_BTN_STYLE = (
     "QPushButton:hover { background: #3c3c3c; }"
     "QPushButton:disabled { color: #555; border-color: #555; }"
 )
+_START_BTN_STYLE = maybe_host_stylesheet(_START_BTN_STYLE)
 
 _TABLE_STYLE = """
     QTableWidget {
@@ -69,32 +74,42 @@ _TABLE_STYLE = """
         font-size: 10px;
     }
 """
+_TABLE_STYLE = maybe_host_stylesheet(_TABLE_STYLE)
 
 _FILTER_STYLE = (
     "QLineEdit { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; "
     "border-radius: 3px; padding: 3px 6px; font-size: 11px; }"
     "QLineEdit:focus { border-color: #4ec9b0; }"
 )
+_FILTER_STYLE = maybe_host_stylesheet(_FILTER_STYLE)
 
 _COMBO_STYLE = (
     "QComboBox { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; "
     "border-radius: 3px; padding: 3px 6px; font-size: 11px; }"
 )
+_COMBO_STYLE = maybe_host_stylesheet(_COMBO_STYLE)
 
 _NUM_INPUT_STYLE = (
     "QLineEdit { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; "
     "border-radius: 3px; padding: 2px 4px; font-size: 11px; }"
 )
+_NUM_INPUT_STYLE = maybe_host_stylesheet(_NUM_INPUT_STYLE)
 
 _PROGRESS_STYLE = (
     "QProgressBar { background: #2d2d2d; border: 1px solid #3c3c3c; "
     "border-radius: 3px; text-align: center; color: #d4d4d4; font-size: 10px; }"
     "QProgressBar::chunk { background: #808080; border-radius: 2px; }"
 )
+_PROGRESS_STYLE = maybe_host_stylesheet(_PROGRESS_STYLE)
 
 _RADIO_STYLE = "QRadioButton { color: #d4d4d4; font-size: 11px; spacing: 4px; }"
+_RADIO_STYLE = maybe_host_stylesheet(_RADIO_STYLE)
 
 _CHECK_STYLE = "QCheckBox { spacing: 0px; } QCheckBox::indicator { width: 14px; height: 14px; }"
+_CHECK_STYLE = maybe_host_stylesheet(_CHECK_STYLE)
+
+_MUTED_LABEL_STYLE = maybe_host_stylesheet("color: #808080; font-size: 11px;")
+_LABEL_STYLE = maybe_host_stylesheet("color: #d4d4d4; font-size: 11px;")
 
 _STATUS_COLORS: dict[str, str] = {
     "queued": "#808080",
@@ -172,7 +187,7 @@ class BulkRenamerWidget(QWidget):
         top_bar.addWidget(self._filter_combo)
 
         self._selection_label = QLabel("0 / 0 selected")
-        self._selection_label.setStyleSheet("color: #808080; font-size: 11px;")
+        self._selection_label.setStyleSheet(_MUTED_LABEL_STYLE)
         top_bar.addWidget(self._selection_label)
 
         main_layout.addLayout(top_bar)
@@ -224,7 +239,7 @@ class BulkRenamerWidget(QWidget):
         analysis_bar.setSpacing(6)
 
         mode_label = QLabel("Mode:")
-        mode_label.setStyleSheet("color: #d4d4d4; font-size: 11px;")
+        mode_label.setStyleSheet(_LABEL_STYLE)
         analysis_bar.addWidget(mode_label)
 
         self._quick_radio = QRadioButton("Quick")
@@ -240,7 +255,7 @@ class BulkRenamerWidget(QWidget):
         analysis_bar.addSpacing(12)
 
         batch_label = QLabel("Batch:")
-        batch_label.setStyleSheet("color: #d4d4d4; font-size: 11px;")
+        batch_label.setStyleSheet(_LABEL_STYLE)
         batch_label.setToolTip("Quick: functions per LLM prompt. Deep: ignored (1 agent per function).")
         analysis_bar.addWidget(batch_label)
 
@@ -254,7 +269,7 @@ class BulkRenamerWidget(QWidget):
         analysis_bar.addWidget(self._batch_input)
 
         concurrent_label = QLabel("Jobs:")
-        concurrent_label.setStyleSheet("color: #d4d4d4; font-size: 11px;")
+        concurrent_label.setStyleSheet(_LABEL_STYLE)
         concurrent_label.setToolTip("Max parallel agents/requests running at the same time")
         analysis_bar.addWidget(concurrent_label)
 
@@ -303,7 +318,7 @@ class BulkRenamerWidget(QWidget):
         action_bar.addWidget(self._progress, 1)
 
         self._progress_label = QLabel("0 / 0")
-        self._progress_label.setStyleSheet("color: #808080; font-size: 11px;")
+        self._progress_label.setStyleSheet(_MUTED_LABEL_STYLE)
         action_bar.addWidget(self._progress_label)
 
         main_layout.addLayout(action_bar)
@@ -311,6 +326,7 @@ class BulkRenamerWidget(QWidget):
         # Internal state
         self._entries: list[FunctionEntry] = []
         self._addr_to_entry: dict[int, int] = {}  # address -> index in _entries
+        self._addr_to_row: dict[int, int] = {}  # address -> current table row when unsorted/load order row
         self._paused = False
 
     def _reposition_header_check(self, _idx: int = 0, _old: int = 0, _new: int = 0) -> None:
@@ -350,6 +366,7 @@ class BulkRenamerWidget(QWidget):
         self._table.setRowCount(0)
         self._entries.clear()
         self._addr_to_entry.clear()
+        self._addr_to_row.clear()
 
         self._table.setRowCount(len(functions))
 
@@ -401,6 +418,7 @@ class BulkRenamerWidget(QWidget):
             )
             self._entries.append(entry)
             self._addr_to_entry[entry.address] = row
+            self._addr_to_row[entry.address] = row
 
             ic = entry.instruction_count
 
@@ -410,35 +428,35 @@ class BulkRenamerWidget(QWidget):
             check_item.setCheckState(
                 Qt.CheckState.Checked if (is_auto and not entry.is_import) else Qt.CheckState.Unchecked
             )
-            check_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            check_item.setFlags(qt_flags(Qt.ItemFlag.ItemIsUserCheckable, Qt.ItemFlag.ItemIsEnabled))
             self._table.setItem(row, _COL_CHECK, check_item)
 
             # Address (numeric sort, store address in UserRole for lookup)
             addr_item = _NumericTableItem(f"0x{entry.address:X}", entry.address)
-            addr_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            addr_item.setFlags(qt_flags(Qt.ItemFlag.ItemIsEnabled, Qt.ItemFlag.ItemIsSelectable))
             addr_item.setData(Qt.ItemDataRole.UserRole, entry.address)
             addr_item.setToolTip(f"0x{entry.address:016X}")
             self._table.setItem(row, _COL_ADDR, addr_item)
 
             # Current name
             name_item = QTableWidgetItem(entry.name)
-            name_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            name_item.setFlags(qt_flags(Qt.ItemFlag.ItemIsEnabled, Qt.ItemFlag.ItemIsSelectable))
             self._table.setItem(row, _COL_NAME, name_item)
 
             # Length (numeric sort)
             length_item = _NumericTableItem(str(ic) if ic else "0", ic)
-            length_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            length_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            length_item.setFlags(qt_flags(Qt.ItemFlag.ItemIsEnabled, Qt.ItemFlag.ItemIsSelectable))
+            length_item.setTextAlignment(qt_flags(Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter))
             self._table.setItem(row, _COL_LENGTH, length_item)
 
             # New name (initially empty)
             new_item = QTableWidgetItem("")
-            new_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            new_item.setFlags(qt_flags(Qt.ItemFlag.ItemIsEnabled, Qt.ItemFlag.ItemIsSelectable))
             self._table.setItem(row, _COL_NEWNAME, new_item)
 
             # Status
             status_item = QTableWidgetItem("")
-            status_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            status_item.setFlags(qt_flags(Qt.ItemFlag.ItemIsEnabled, Qt.ItemFlag.ItemIsSelectable))
             self._table.setItem(row, _COL_STATUS, status_item)
 
     def _finish_load(self) -> None:
@@ -474,9 +492,13 @@ class BulkRenamerWidget(QWidget):
 
     def _find_row_for_address(self, address: int) -> int | None:
         """Find the current visual row for a given address (sort-safe)."""
+        cached_row = self._addr_to_row.get(address)
+        if cached_row is not None:
+            return cached_row
         for row in range(self._table.rowCount()):
             addr_item = self._table.item(row, _COL_ADDR)
             if addr_item is not None and addr_item.data(Qt.ItemDataRole.UserRole) == address:
+                self._addr_to_row[address] = row
                 return row
         return None
 

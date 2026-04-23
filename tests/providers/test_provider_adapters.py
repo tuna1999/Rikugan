@@ -11,10 +11,17 @@ from tests.mocks.ida_mock import install_ida_mocks
 install_ida_mocks()
 
 
+def _reload_anthropic_provider_module() -> None:
+    """Force the real provider module to load, not leftover test stubs."""
+    sys.modules.pop("rikugan.providers.anthropic_provider", None)
+    sys.modules.pop("rikugan.core.types", None)
+
+
 class TestBuiltinModels(unittest.TestCase):
     """All providers must declare non-empty builtin model lists."""
 
     def test_anthropic_builtin_models(self):
+        _reload_anthropic_provider_module()
         from rikugan.providers.anthropic_provider import AnthropicProvider
         p = AnthropicProvider(api_key="test", model="test")
         models = p._builtin_models()
@@ -44,6 +51,7 @@ class TestProviderCapabilities(unittest.TestCase):
     """All providers must declare streaming and tool_use capabilities."""
 
     def test_anthropic_capabilities(self):
+        _reload_anthropic_provider_module()
         from rikugan.providers.anthropic_provider import AnthropicProvider
         p = AnthropicProvider(api_key="test", model="test")
         caps = p.capabilities

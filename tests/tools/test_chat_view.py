@@ -10,22 +10,33 @@ from unittest.mock import MagicMock
 from tests.qt_stubs import ensure_pyside6_stubs
 ensure_pyside6_stubs()
 
-# Stub all heavy submodules that chat_view imports
+# Stub all heavy submodules that chat_view imports.
+# Reinstall them unconditionally because other tests may have left behind
+# incomplete stubs in sys.modules.
 for _mod_name in [
     "rikugan.agent.turn",
     "rikugan.core.types",
 ]:
-    if _mod_name not in sys.modules:
-        _stub = types.ModuleType(_mod_name)
-        # Add commonly-needed attrs
-        for _attr in [
-            "PlanView", "TurnEvent",
-            "TurnEventType", "Message", "Role",
-        ]:
-            setattr(_stub, _attr, MagicMock())
-        sys.modules[_mod_name] = _stub
+    _stub = types.ModuleType(_mod_name)
+    # Add commonly-needed attrs
+    for _attr in [
+        "PlanView", "TurnEvent",
+        "TurnEventType", "Message", "Role",
+    ]:
+        setattr(_stub, _attr, MagicMock())
+    sys.modules[_mod_name] = _stub
+
+# Other tests may leave stubbed UI modules behind; force fresh imports.
+for _mod_name in [
+    "rikugan.ui.chat_view",
+    "rikugan.ui.message_widgets",
+    "rikugan.ui.plan_view",
+    "rikugan.ui.tool_widgets",
+]:
+    sys.modules.pop(_mod_name, None)
 
 from rikugan.ui.chat_view import _is_hidden_system_user_message, _TOOL_GROUP_MIN_CALLS  # noqa: E402
+from rikugan.ui.bulk_renamer import BulkRenamerWidget  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +79,15 @@ class TestChatViewConstants(unittest.TestCase):
 
     def test_tool_group_min_calls_value(self):
         self.assertEqual(_TOOL_GROUP_MIN_CALLS, 2)
+
+
+class TestBulkRenamerLookup(unittest.TestCase):
+    def test_find_row_prefers_cached_mapping(self):
+        widget = object.__new__(BulkRenamerWidget)
+        widget._addr_to_row = {0x401000: 7}
+        widget._table = MagicMock()
+        self.assertEqual(widget._find_row_for_address(0x401000), 7)
+        widget._table.rowCount.assert_not_called()
 
 
 if __name__ == "__main__":

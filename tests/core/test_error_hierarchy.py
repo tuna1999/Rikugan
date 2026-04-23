@@ -37,6 +37,12 @@ from rikugan.core.errors import (
 )
 
 
+def _reload_anthropic_provider_module() -> None:
+    """Force the real provider module to load, not leftover test stubs."""
+    sys.modules.pop("rikugan.providers.anthropic_provider", None)
+    sys.modules.pop("rikugan.core.types", None)
+
+
 class TestErrorHierarchy(unittest.TestCase):
     """Every error type must be a subclass of RikuganError."""
 
@@ -124,6 +130,7 @@ class TestProviderErrorConsistency(unittest.TestCase):
     def test_anthropic_sdk_auth_error(self):
         """Anthropic maps anthropic.AuthenticationError → AuthenticationError."""
         import anthropic
+        _reload_anthropic_provider_module()
         from rikugan.providers.anthropic_provider import AnthropicProvider
         p = AnthropicProvider(api_key="test", model="test")
         resp = self._mock_httpx_response(401)
@@ -160,6 +167,7 @@ class TestProviderErrorConsistency(unittest.TestCase):
 
     def test_all_providers_generic_fallback(self):
         """All providers map unknown errors → ProviderError."""
+        _reload_anthropic_provider_module()
         from rikugan.providers.anthropic_provider import AnthropicProvider
         from rikugan.providers.openai_provider import OpenAIProvider
         from rikugan.providers.gemini_provider import GeminiProvider
@@ -177,6 +185,7 @@ class TestProviderHandleApiErrorReturnType(unittest.TestCase):
     """_handle_api_error must always raise (NoReturn); never silently return."""
 
     def test_anthropic_never_returns(self):
+        _reload_anthropic_provider_module()
         from rikugan.providers.anthropic_provider import AnthropicProvider
         p = AnthropicProvider(api_key="test", model="test")
         with self.assertRaises(ProviderError):

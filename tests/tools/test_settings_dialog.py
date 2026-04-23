@@ -11,7 +11,9 @@ from tests.qt_stubs import ensure_pyside6_stubs
 
 ensure_pyside6_stubs()
 
-# Stub heavy dependencies
+# Stub heavy dependencies.
+# Reinstall these unconditionally because other tests may leave behind
+# incomplete stubs that are missing attributes needed here.
 for _mod_name in [
     "rikugan.core.config",
     "rikugan.core.logging",
@@ -20,22 +22,33 @@ for _mod_name in [
     "rikugan.providers.auth_cache",
     "rikugan.providers.ollama_provider",
     "rikugan.providers.registry",
+    "rikugan.ui.styles",
 ]:
-    if _mod_name not in sys.modules:
-        _stub = types.ModuleType(_mod_name)
-        for _attr in [
-            "RikuganConfig",
-            "log_debug",
-            "log_error",
-            "log_info",
-            "ModelInfo",
-            "resolve_anthropic_auth",
-            "resolve_auth_cached",
-            "DEFAULT_OLLAMA_URL",
-            "ProviderRegistry",
-        ]:
-            setattr(_stub, _attr, MagicMock())
-        sys.modules[_mod_name] = _stub
+    _stub = types.ModuleType(_mod_name)
+    for _attr in [
+        "RikuganConfig",
+        "log_debug",
+        "log_error",
+        "log_info",
+        "log_warning",
+        "ModelInfo",
+        "Role",
+        "resolve_anthropic_auth",
+        "resolve_auth_cached",
+        "DEFAULT_OLLAMA_URL",
+        "ProviderRegistry",
+        "DARK_THEME",
+        "build_theme_stylesheet",
+        "maybe_host_stylesheet",
+    ]:
+        setattr(_stub, _attr, MagicMock())
+    sys.modules[_mod_name] = _stub
+
+_styles_mod = sys.modules.get("rikugan.ui.styles")
+if _styles_mod is not None:
+    _styles_mod.maybe_host_stylesheet = lambda css: css
+    _styles_mod.build_theme_stylesheet = lambda: ""
+    _styles_mod.DARK_THEME = ""
 
 # Ensure DEFAULT_OLLAMA_URL is a string on the stub (real module already has it)
 _ollama_mod = sys.modules.get("rikugan.providers.ollama_provider")
@@ -144,7 +157,7 @@ class TestResolveAuthCached(unittest.TestCase):
     """Tests for the auth_cache module (extracted from settings_dialog)."""
 
     def _get_ac(self):
-        return sys.modules["rikugan.providers.auth_cache"]
+        return _ac_stub
 
     def setUp(self):
         ac = self._get_ac()

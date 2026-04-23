@@ -16,6 +16,7 @@ Detection order:
 from __future__ import annotations
 
 import sys
+from typing import Any, cast
 
 
 def _detect_binding() -> str:
@@ -59,11 +60,12 @@ QT_BINDING: str = _detect_binding()
 # ---------------------------------------------------------------------------
 
 if QT_BINDING == "PySide6":
-    from PySide6.QtCore import QObject, Qt, QTimer, Signal
+    from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
     from PySide6.QtGui import (
         QColor,
         QFont,
         QIntValidator,
+        QPalette,
         QSyntaxHighlighter,
         QTextCharFormat,
     )
@@ -95,6 +97,7 @@ if QT_BINDING == "PySide6":
         QSizePolicy,
         QSpinBox,
         QSplitter,
+        QStackedWidget,
         QTabBar,
         QTableWidget,
         QTableWidgetItem,
@@ -107,12 +110,13 @@ if QT_BINDING == "PySide6":
         QWidget,
     )
 else:
-    from PyQt5.QtCore import QObject, Qt, QTimer  # noqa: F401
+    from PyQt5.QtCore import QEvent, QObject, Qt, QTimer  # noqa: F401
     from PyQt5.QtCore import pyqtSignal as Signal  # noqa: F401
     from PyQt5.QtGui import (  # noqa: F401
         QColor,
         QFont,
         QIntValidator,
+        QPalette,
         QSyntaxHighlighter,
         QTextCharFormat,
     )
@@ -144,6 +148,7 @@ else:
         QSizePolicy,
         QSpinBox,
         QSplitter,
+        QStackedWidget,
         QTabBar,
         QTableWidget,
         QTableWidgetItem,
@@ -155,6 +160,38 @@ else:
         QVBoxLayout,
         QWidget,
     )
+
+
+def qt_flags(*flags: object) -> object:
+    """Combine same-family Qt enum/flag values without relying on PyQt5 shim bitwise behavior."""
+    if not flags:
+        return 0
+
+    value = 0
+    flag_type: type[Any] | None = None
+    for flag in flags:
+        current_type = type(flag)
+        if flag_type is None:
+            flag_type = current_type
+        elif current_type is not flag_type:
+            raise TypeError(f"qt_flags() received mixed flag types: {flag_type.__name__} and {current_type.__name__}")
+        flag_value = getattr(flag, "value", flag)
+        value |= int(cast(Any, flag_value))
+
+    if flag_type is None:
+        return value
+    return cast(Any, flag_type)(value)
+
+
+def qt_run(obj: object, *args, **kwargs) -> object:
+    """Call Qt6-style run API with Qt5 fallback where needed."""
+    run = getattr(obj, "exec", None)
+    if callable(run):
+        return run(*args, **kwargs)
+    run_legacy = getattr(obj, "exec_", None)
+    if callable(run_legacy):
+        return run_legacy(*args, **kwargs)
+    raise AttributeError(f"{type(obj).__name__} has no exec/exec_ method")
 
 
 def is_pyside6() -> bool:

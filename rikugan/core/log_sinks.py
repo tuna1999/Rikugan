@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 from collections.abc import Callable
 
 from .host import get_user_config_base_dir
@@ -110,6 +111,8 @@ IDAHandler = HostOutputHandler
 
 def _log_file_path() -> str:
     base = get_user_config_base_dir()
+    if os.name == "nt" and os.path.isabs(base) and not os.path.splitdrive(base)[0]:
+        base = os.path.join(tempfile.gettempdir(), base.lstrip("/\\").replace("/", os.sep))
     d = os.path.join(base, "rikugan")
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, "rikugan_debug.log")
@@ -120,10 +123,12 @@ class _FlushFileHandler(logging.FileHandler):
 
     def emit(self, record: logging.LogRecord) -> None:
         super().emit(record)
+        stream = self.stream
         try:
-            self.stream.flush()
-        except OSError:
-            pass
+            if stream is not None:
+                stream.flush()
+        except OSError as exc:
+            sys.stderr.write(f"[Rikugan] log flush failed: {exc}\n")
 
 
 # ---------------------------------------------------------------------------

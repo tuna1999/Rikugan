@@ -179,7 +179,7 @@ class BulkRenamerEngine:
             self._jobs.append(job)
             self._original_names[job.address] = job.current_name
 
-    def start(self, deep: bool = False) -> None:
+    def start_renaming(self, deep: bool = False) -> None:
         """Start the renaming engine in a background thread.
 
         Parameters
@@ -215,7 +215,7 @@ class BulkRenamerEngine:
         self._paused.set()
         log_info("Bulk renamer resumed")
 
-    def cancel(self) -> None:
+    def cancel_renaming(self) -> None:
         """Cancel the renaming engine."""
         self._cancel.set()
         self._paused.set()  # unblock if paused
