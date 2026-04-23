@@ -66,7 +66,7 @@ class _ModelFetcher:
     def shutdown(self) -> None:
         self._alive.clear()
         # Drain the queue to unblock any pending puts
-        while not self._queue.empty():
+        while True:
             try:
                 self._queue.get_nowait()
             except queue.Empty:

@@ -72,9 +72,9 @@ class TestModelFetcherShutdown(unittest.TestCase):
     def test_shutdown_sets_alive_false(self):
         registry = MagicMock()
         fetcher = _ModelFetcher(registry)
-        self.assertTrue(fetcher._alive)
+        self.assertTrue(fetcher._alive.is_set())
         fetcher.shutdown()
-        self.assertFalse(fetcher._alive)
+        self.assertFalse(fetcher._alive.is_set())
 
     def test_shutdown_drains_queue(self):
         registry = MagicMock()
@@ -130,8 +130,8 @@ class TestModelFetcherFetch(unittest.TestCase):
         registry = MagicMock()
         registry.create.side_effect = RuntimeError("boom")
         fetcher = _ModelFetcher(registry)
-        fetcher._alive = False
-        fetcher.fetch("anthropic", "key", "base")
+        fetcher.shutdown()  # clears _alive and drains the queue
+        fetcher.fetch("anthropic", "key", "base")  # must not crash
         self.assertIsNone(fetcher.poll())
 
 
